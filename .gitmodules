@@ -1,0 +1,3 @@
+[submodule "armpp"]
+	path = mcu/lib/armpp
+	url = git@github.com:zmij/armpp.git
