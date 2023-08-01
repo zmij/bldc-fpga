@@ -20,12 +20,39 @@ module top (
   );
 
 
+  // APB2 wires
+  wire apb_pclk, apb_prst, apb_penable, apb_pwrite;
+  wire [7:0] apb_paddr;
+  wire [3:0] apb_pstrb;
+  wire [2:0] apb_pprot;
+  wire [31:0] apb_pwdata, apb_prdata1;
+
+  wire apb_psel1, apb_pready1, apb_pslverr1;
+
   gowin_empu_top empu_ (
-      .sys_clk(clk_54mhz_),  //input sys_clk
-      .uart0_rxd(uart0_rxd),  //input uart0_rxd
-      .uart0_txd(uart0_txd),  //output uart0_txd
-      .uart1_rxd(uart1_rxd),  //input uart1_rxd
-      .uart1_txd(uart1_txd),  //output uart1_txd
+      .sys_clk  (clk_54mhz_),  //input sys_clk
+      .uart0_rxd(uart0_rxd),   //input uart0_rxd
+      .uart0_txd(uart0_txd),   //output uart0_txd
+      .uart1_rxd(uart1_rxd),   //input uart1_rxd
+      .uart1_txd(uart1_txd),   //output uart1_txd
+
+      // Common APB2 wires
+      .master_pclk(apb_pclk),  //output master_pclk
+      .master_prst(apb_prst),  //output master_prst
+      .master_penable(apb_penable),  //output master_penable
+      .master_paddr(apb_paddr),  //output [7:0] master_paddr
+      .master_pwrite(apb_pwrite),  //output master_pwrite
+      .master_pwdata(apb_pwdata),  //output [31:0] master_pwdata
+      .master_pstrb(apb_pstrb),  //output [3:0] master_pstrb
+      .master_pprot(apb_pprot),  //output [2:0] master_pprot
+
+      // APB2 peripheral 1
+      .master_psel1(apb_psel1),  //output master_psel1
+      .master_prdata1(apb_prdata1),  //input [31:0] master_prdata1
+      .master_pready1(apb_pready1),  //input master_pready1
+      .master_pslverr1(apb_pslverr1),  //input master_pslverr1
+
       .reset_n(reset_n)  //input reset_n
   );
+
 endmodule
