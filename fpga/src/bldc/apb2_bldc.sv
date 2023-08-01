@@ -10,6 +10,7 @@ It provides an interface to control and monitor the BLDC motor.
 `define __APB2_BLDC_SV__
 
 `include "bldc/types.sv"
+`include "bldc/encoder.sv"
 
 /**
  * @class apb2_bldc_perpheral
@@ -18,7 +19,13 @@ It provides an interface to control and monitor the BLDC motor.
  *
  * This module provides an interface to control and monitor a BLDC motor using the APB2 bus.
  * It provides registers to configure the motor parameters and read the motor status.
-*/
+ *
+ * Registers:
+ * status       0x00
+ *  [2:0] hall_values    R/O
+ *  [5:3] sector         R/O
+ *  [7:6] detected_dir   R/O
+ */
 module apb2_bldc_perpheral #(
     // Data width for APB2 bus
     parameter data_width = 32,
@@ -167,6 +174,11 @@ module apb2_bldc_perpheral #(
     input preset_n  // reset signal, active low
     /** @} */  // end of Reset_Signal
 );
+  localparam counter_width = 32;
+  localparam pwm_counter_width = $clog2(pwm_clk_freq_hz / pwm_freq_hz) + 1;
+
+  // Register addresses
+  localparam reg_status = 8'h00 * 4;
 
   typedef enum logic [1:0] {
     idle_state,
@@ -175,6 +187,31 @@ module apb2_bldc_perpheral #(
   } apb_state_t;
 
   apb_state_t apb_state_;
+
+  wire [counter_width - 1:0] enc_counter_;
+  wire [counter_width - 1:0] rot_duration_;
+  wire [2:0] sector_;
+
+  three_phase_encoder #(
+      .clk_freq_hz(enc_freq_hz),
+      .pole_pairs(pole_pairs),
+      .counter_width(counter_width)
+  ) enc_inst (
+      .clk(encoder_clk),
+      .reset_n(preset_n),
+      .hall_values(hall_values),
+      .overall_counter(enc_counter_),
+      .rotation_direction(detected_dir),
+      .rotation_duration(rot_duration_),
+      .sector(sector_)
+  );
+
+  task read_status_register();
+    localparam reg_status_padding = {(data_width - 8) {1'b0}};
+    begin
+      prdata <= {reg_status_padding, detected_dir, sector_, hall_values};
+    end
+  endtask
 
   always @(negedge preset_n or posedge pclk) begin
     if (preset_n == 0) begin
@@ -195,8 +232,11 @@ module apb2_bldc_perpheral #(
         end
         r_enable: begin
           if (psel && !pwrite && penable) begin
-            // Write requested address for now
-            prdata[addr_width-1:0] <= paddr;
+            case (paddr)
+              reg_status: read_status_register();
+              // Write requested address for now
+              default: prdata[addr_width-1:0] <= paddr;
+            endcase
             pready <= 1;
             apb_state_ <= idle_state;
           end
