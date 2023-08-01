@@ -1,5 +1,6 @@
 `include "gowin_empu/gowin_empu.v"
 `include "gowin_pllvr/gowin_pllvr.v"
+`include "bldc/apb2_bldc.sv"
 
 module top (
     input sys_clk,
@@ -9,6 +10,8 @@ module top (
 
     input  uart1_rxd,
     output uart1_txd,
+
+    input hall_states_t hall_values,
 
     input reset_n
 );
@@ -29,6 +32,7 @@ module top (
 
   wire apb_psel1, apb_pready1, apb_pslverr1;
 
+  // EMPU device instantiation
   gowin_empu_top empu_ (
       .sys_clk  (clk_54mhz_),  //input sys_clk
       .uart0_rxd(uart0_rxd),   //input uart0_rxd
@@ -53,6 +57,29 @@ module top (
       .master_pslverr1(apb_pslverr1),  //input master_pslverr1
 
       .reset_n(reset_n)  //input reset_n
+  );
+
+  apb2_bldc_perpheral bldc (
+      .pclk(apb_pclk),
+      .encoder_clk(sys_clk),
+
+      .preset_n(apb_prst),
+      .penable(apb_penable),
+      .pwrite(apb_pwrite),
+      .paddr(apb_paddr),
+      .pwdata(apb_pwdata),
+      .pstrb(apb_pstrb),
+      .pprot(apb_pprot),
+
+      .psel(apb_psel1),
+      .prdata(apb_prdata1),
+      .pready(apb_pready1),
+      .pslverr(apb_pslverr1),
+
+      .hall_values (hall_values),
+      .phase_enable(phase_enable),
+
+      .detected_dir(dir)
   );
 
 endmodule
