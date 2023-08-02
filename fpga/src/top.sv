@@ -59,9 +59,13 @@ module top (
       .reset_n(reset_n)  //input reset_n
   );
 
-  apb2_bldc_perpheral bldc (
+  wire [1:0] dir;
+  wire [5:0] phase_enable;
+
+  apb2_bldc_perpheral #(
+      .pole_pairs(11)
+  ) bldc (
       .pclk(apb_pclk),
-      .encoder_clk(sys_clk),
 
       .preset_n(apb_prst),
       .penable(apb_penable),

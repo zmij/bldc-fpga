@@ -30,48 +30,99 @@ module three_phase_encoder #(
     input hall_states_t hall_values,  // Hall sensor values
     output reg [counter_width-1:0] overall_counter, // Overall counter that increments or decrements based on rotation
     output reg [counter_width-1:0] rotation_duration,  // Duration of one rotation in ticks
+    output [counter_width-1:0] rpm,
     output rotation_direction_t rotation_direction,  // Rotation direction
     output logic [2:0] sector  // Current sector
 );
+  localparam cycle_size = 6;
+  localparam ticks_per_minute = clk_freq_hz * 60;
 
-  hall_states_t prev_hall_values;  // Previous hall sensor values
-  logic [counter_width-1:0] tick_counter;  // Internal counter to keep track of ticks
-  logic [2:0] transition_counter;  // Counter for detecting change in direction
+  hall_states_t prev_hall_values_;  // Previous hall sensor values
+  logic [counter_width-1:0] cycle_counter_;  // Internal counter to keep track of ticks taking to make a cycle
+  logic [counter_width-1:0] idle_counter_; // Internal counter to keep track of ticks when nothin happens
+  logic [2:0] transition_counter_;  // Counter for detecting change in direction
   logic direction_changed;  // Flag to indicate change in direction
+  logic idle_;
 
   /**
    * @brief Task to update the rotation information based on the hall_values.
    * @details This task is called whenever the hall_values changes.
    */
-  task automatic update_rotation;
+  task automatic update_direction;
     begin
-      if (hall_values != prev_hall_values) begin
-        if (prev_hall_values.next() == hall_values) begin
+      if (hall_values != prev_hall_values_) begin
+        if (prev_hall_values_.next() == hall_values) begin
           if (rotation_direction != DIR_CW) direction_changed = 1;
           else direction_changed = 0;
           rotation_direction <= DIR_CW;
-          overall_counter <= overall_counter + 1;
-        end else if (prev_hall_values.prev() == hall_values) begin
+        end else if (prev_hall_values_.prev() == hall_values) begin
           if (rotation_direction != DIR_CCW) direction_changed = 1;
           else direction_changed = 0;
           rotation_direction <= DIR_CCW;
-          overall_counter <= overall_counter - 1;
         end
+        prev_hall_values_ <= hall_values;
+        idle_ <= 0;
+      end else begin
+        idle_ <= 1;
+        if (idle_counter_ > idle_ticks) begin
+          rotation_direction <= DIR_NONE;
+        end
+      end
+    end
+  endtask
 
-        prev_hall_values   <= hall_values;
-        transition_counter <= direction_changed ? 0 : transition_counter + 1;
-        if (transition_counter == 6) begin
-          rotation_duration <= rotation_direction == DIR_CW ? tick_counter : -tick_counter;
-          tick_counter <= 0;
-          transition_counter <= 0;
-        end else if (direction_changed) begin
+  /**
+   * @brief Task to update rotation duration
+   */
+  task update_duration();
+    begin
+      cycle_counter_ <= cycle_counter_ + 1;
+      if (!idle_) begin
+        if (direction_changed) begin
+          transition_counter_ <= 0;
+          cycle_counter_ <= 0;
           rotation_duration <= 0;
+        end else begin
+          if (transition_counter_ < cycle_size) begin
+            transition_counter_ <= transition_counter_ + 1;
+          end else begin
+            rotation_duration <= cycle_counter_ * pole_pairs;
+            cycle_counter_ <= 0;
+            transition_counter_ <= 0;
+          end
         end
       end else begin
-        tick_counter <= tick_counter + 1;
-        if (tick_counter > idle_ticks) begin
-          rotation_direction <= DIR_NONE;
-          rotation_duration  <= 0;
+        if (idle_counter_ > idle_ticks) begin
+          transition_counter_ <= 0;
+          rotation_duration   <= 0;
+        end
+      end
+    end
+  endtask
+
+  /**
+   * Update idle ticks counter 
+   */
+  task update_idle_counter();
+    begin
+      if (idle_) begin
+        idle_counter_ <= idle_counter_ + 1;
+      end else begin
+        idle_counter_ <= 0;
+      end
+    end
+  endtask
+
+  /**
+   * @brief Task to update conter value depending on direction
+   */
+  task update_counter();
+    begin
+      if (!idle_) begin
+        if (rotation_direction == DIR_CW) begin
+          overall_counter <= overall_counter + 1;
+        end else if (rotation_direction == DIR_CCW) begin
+          overall_counter <= overall_counter - 1;
         end
       end
     end
@@ -83,13 +134,45 @@ module three_phase_encoder #(
    */
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      tick_counter <= 0;
-      transition_counter <= 0;
-      overall_counter <= 0;
+      idle_ <= 1;
       rotation_direction <= DIR_NONE;
+    end else begin
+      update_direction();
+    end
+  end
+
+  /**
+   * @brief Always block to update rotation duration
+   */
+  always_ff @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      cycle_counter_ <= 0;
+      transition_counter_ <= 0;
       rotation_duration <= 0;
     end else begin
-      update_rotation();
+      update_duration();
+    end
+  end
+
+  /**
+   * @brief Always block to update the encoder counter
+   */
+  always_ff @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      overall_counter <= 0;
+    end else begin
+      update_counter();
+    end
+  end
+
+  /**
+   * @brief Always block to update the idle counter
+   */
+  always_ff @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      idle_counter_ <= 0;
+    end else begin
+      update_idle_counter();
     end
   end
 
@@ -112,6 +195,8 @@ module three_phase_encoder #(
       endcase
     end
   end
+
+  assign rpm = rotation_duration == 0 ? 0 : ticks_per_minute / rotation_duration;
 
 endmodule
 

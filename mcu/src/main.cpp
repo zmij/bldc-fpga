@@ -66,6 +66,10 @@ union status_registry {
 };
 static_assert(sizeof(status_registry) == sizeof(ah::raw_register));
 
+using enc_counter_register  = ah::raw_read_only_register_field<0, 32>;
+using rot_duration_register = ah::raw_read_only_register_field<0, 32>;
+using rpm_register          = ah::raw_read_only_register_field<0, 32>;
+
 /**
  * @brief APB2 BLDC motor driver peripheral
  *
@@ -74,7 +78,7 @@ static_assert(sizeof(status_registry) == sizeof(ah::raw_register));
 class bldc_motor {
 public:
     static constexpr address     base_address   = 0x40002400;
-    static constexpr std::size_t register_count = 1;
+    static constexpr std::size_t register_count = 4;
 
     status_registry volatile const&
     status() const
@@ -89,7 +93,7 @@ public:
     }
 
     rotation_direction_t
-    detected_direction() volatile const
+    detected_rotation() volatile const
     {
         return status_.detected_rotation;
     }
@@ -100,8 +104,29 @@ public:
         return status_.sector;
     }
 
+    std::uint32_t
+    enc_counter() volatile const
+    {
+        return enc_counter_;
+    }
+
+    std::uint32_t
+    rotation_duration() volatile const
+    {
+        return rot_duration_;
+    }
+
+    std::uint32_t
+    rpm() volatile const
+    {
+        return rpm_;
+    }
+
 private:
     status_registry volatile status_;
+    enc_counter_register volatile enc_counter_;
+    rot_duration_register volatile rot_duration_;
+    rpm_register volatile rpm_;
 };
 static_assert(sizeof(bldc_motor) == sizeof(ah::raw_register) * bldc_motor::register_count);
 
@@ -138,16 +163,21 @@ main()
           << clock.system_frequency().period_duration<armpp::chrono::picoseconds>() << "\r\n"
           << "Motor device address " << motor.operator->() << "\r\n";
 
-    std::uint32_t hall_values = 0;
+    std::uint32_t              hall_values = 0;
+    bldc::rotation_direction_t dir         = bldc::rotation_direction_t::none;
 
     while (1) {
         timer0.delay(ticks_per_milli * 10);
-        if (motor->hall_values() != hall_values) {
+        if (motor->hall_values() != hall_values || motor->detected_rotation() != dir) {
             hall_values = motor->hall_values();
-            uart0 << "tick: " << width_out(10) << sysclock::now().time_since_epoch()
+            dir         = motor->detected_rotation();
+
+            uart0 << "t: " << width_out(10) << sysclock::now().time_since_epoch()
                   << " hall: " << width_out(3) << bin_out << hall_values << " sector: " << dec_out
-                  << width_out(0) << motor->status().sector.get()
-                  << " dir: " << motor->status().detected_rotation << "\r\n";
+                  << width_out(0) << motor->sector() << " dir: " << motor->detected_rotation()
+                  << " cnt: " << width_out(10) << motor->enc_counter() << " rot: " << width_out(10)
+                  << motor->rotation_duration() << " rpm " << width_out(5) << motor->rpm()
+                  << "\r\n";
         }
     }
 }
