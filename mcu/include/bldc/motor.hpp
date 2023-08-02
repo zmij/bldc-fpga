@@ -57,11 +57,17 @@ using enc_counter_register  = hal::raw_read_only_register_field<0, 32>;
 using rot_duration_register = hal::raw_read_only_register_field<0, 32>;
 using rpm_register          = hal::raw_read_only_register_field<0, 32>;
 
-union control_registry {
+union control_register {
     hal::bool_read_write_register_field<0>                     enable;
     hal::read_write_register_field<rotation_direction_t, 1, 2> dir;
 };
-static_assert(sizeof(control_registry) == sizeof(hal::raw_register));
+static_assert(sizeof(control_register) == sizeof(hal::raw_register));
+
+union pwm_control_register {
+    hal::raw_read_write_register_field<0, 16> duty;
+    hal::raw_read_only_register_field<16, 16> cycle;
+};
+static_assert(sizeof(pwm_control_register) == sizeof(hal::raw_register));
 
 /**
  * @brief APB2 BLDC motor driver peripheral
@@ -71,7 +77,7 @@ static_assert(sizeof(control_registry) == sizeof(hal::raw_register));
 class bldc_motor {
 public:
     static constexpr hal::address base_address   = 0x40002400;
-    static constexpr std::size_t  register_count = 5;
+    static constexpr std::size_t  register_count = 6;
 
     status_registry volatile const&
     status() const
@@ -151,12 +157,31 @@ public:
         ctl_.dir = dir;
     }
 
+    std::uint32_t
+    pwm_cycle() const
+    {
+        return pwm_ctl_.cycle;
+    }
+
+    std::uint32_t
+    pwm_duty() volatile const
+    {
+        return pwm_ctl_.duty;
+    }
+
+    void
+    set_pwm_duty(std::uint32_t duty)
+    {
+        pwm_ctl_.duty = duty;
+    }
+
 private:
     status_registry       status_;
     enc_counter_register  enc_counter_;
     rot_duration_register rot_duration_;
     rpm_register          rpm_;
-    control_registry      ctl_;
+    control_register      ctl_;
+    pwm_control_register  pwm_ctl_;
 };
 static_assert(sizeof(bldc_motor) == sizeof(hal::raw_register) * bldc_motor::register_count);
 

@@ -24,6 +24,10 @@ module top (
       .clkin(sys_clk)  //input clkin
   );
 
+  gowin_pllvr_100mhz pll_clk_100mhz_ (
+      .clkout(clk_100mhz_),  //output clkout
+      .clkin(sys_clk)  //input clkin
+  );
 
   // APB2 wires
   wire apb_pclk, apb_prst, apb_penable, apb_pwrite;
@@ -68,6 +72,7 @@ module top (
       .pole_pairs(11)
   ) bldc (
       .pclk(apb_pclk),
+      .pwm_clk(clk_100mhz_),
 
       .preset_n(apb_prst),
       .penable(apb_penable),
@@ -82,8 +87,8 @@ module top (
       .pready(apb_pready1),
       .pslverr(apb_pslverr1),
 
-      .hall_values (hall_values),
-      .phase_enable(pwm_out),
+      .hall_values(hall_values),
+      .pwm_out(pwm_out),
 
       .detected_dir(dir)
   );

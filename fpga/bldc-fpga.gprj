@@ -7,6 +7,7 @@
     <FileList>
         <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/gowin_empu/gowin_empu.v" type="file.verilog" enable="1"/>
         <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/gowin_pllvr/gowin_pllvr.v" type="file.verilog" enable="1"/>
+        <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/gowin_pllvr/gowin_pllvr_100mhz.v" type="file.verilog" enable="1"/>
         <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/top.sv" type="file.verilog" enable="1"/>
         <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/bldc-fpga.cst" type="file.cst" enable="1"/>
     </FileList>

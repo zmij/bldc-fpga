@@ -46,13 +46,16 @@ main()
           << "Frequency period duration: "
           << clock.system_frequency().period_duration<armpp::chrono::nanoseconds>() << " "
           << clock.system_frequency().period_duration<armpp::chrono::picoseconds>() << "\r\n"
-          << "Motor device address " << motor.operator->() << "\r\n";
+          << "Motor device address " << motor.operator->() << "\r\n"
+          << "PWM cycle length " << motor->pwm_cycle() << "\r\n";
 
     std::uint32_t              hall_values = 0;
     bldc::rotation_direction_t dir         = bldc::rotation_direction_t::none;
 
     motor->enable();
     motor->set_direction(bldc::rotation_direction_t::cw);
+    auto cycle = motor->pwm_cycle();
+    motor->set_pwm_duty(cycle / 5);
 
     uart0 << "Start the main loop\r\n";
 
