@@ -12,6 +12,8 @@ module top (
     output uart1_txd,
 
     input hall_states_t hall_values,
+    output [5:0] pwm_out,
+    output [3:0] probes,
 
     input reset_n
 );
@@ -81,9 +83,11 @@ module top (
       .pslverr(apb_pslverr1),
 
       .hall_values (hall_values),
-      .phase_enable(phase_enable),
+      .phase_enable(pwm_out),
 
       .detected_dir(dir)
   );
+
+  assign probes = {apb_pwrite, apb_psel1, apb_pready1};
 
 endmodule
