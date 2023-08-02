@@ -21,10 +21,14 @@ It provides an interface to control and monitor the BLDC motor.
  * It provides registers to configure the motor parameters and read the motor status.
  *
  * Registers:
- * status       0x00
- *  [2:0] hall_values    R/O
- *  [5:3] sector         R/O
- *  [7:6] detected_dir   R/O
+ * status               0x00
+ *  [2:0] hall_values    RO
+ *  [5:3] sector         RO
+ *  [7:6] detected_dir   RO
+ * counter              0x04
+ *  [31:0] value         RO
+ * rotation duration    0x08
+ *  [31:0] value         RO
  */
 module apb2_bldc_perpheral #(
     // Data width for APB2 bus
@@ -179,6 +183,8 @@ module apb2_bldc_perpheral #(
 
   // Register addresses
   localparam reg_status = 8'h00 * 4;
+  localparam reg_enc_counter = 8'h01 * 4;
+  localparam reg_enc_rot_duration = 8'h02 * 4;
 
   typedef enum logic [1:0] {
     idle_state,
@@ -193,11 +199,11 @@ module apb2_bldc_perpheral #(
   wire [2:0] sector_;
 
   three_phase_encoder #(
-      .clk_freq_hz(enc_freq_hz),
+      .clk_freq_hz(clk_freq_hz),
       .pole_pairs(pole_pairs),
       .counter_width(counter_width)
   ) enc_inst (
-      .clk(encoder_clk),
+      .clk(pclk),
       .reset_n(preset_n),
       .hall_values(hall_values),
       .overall_counter(enc_counter_),
@@ -206,6 +212,22 @@ module apb2_bldc_perpheral #(
       .sector(sector_)
   );
 
+  task read_registers();
+    begin
+      if (psel && !pwrite && penable) begin
+        case (paddr)
+          reg_status: read_status_register();
+          reg_enc_counter: read_enc_counter();
+          reg_enc_rot_duration: read_enc_rot_duration();
+          // Write requested address for now
+          default: prdata[addr_width-1:0] <= paddr;
+        endcase
+        pready <= 1;
+        apb_state_ <= idle_state;
+      end
+    end
+  endtask
+
   task read_status_register();
     localparam reg_status_padding = {(data_width - 8) {1'b0}};
     begin
@@ -213,10 +235,32 @@ module apb2_bldc_perpheral #(
     end
   endtask
 
+  task read_enc_counter();
+    begin
+      prdata <= enc_counter_;
+    end
+  endtask
+
+  task read_enc_rot_duration();
+    begin
+      prdata <= rot_duration_;
+    end
+  endtask
+
+  task write_registers();
+    begin
+      if (psel && !pwrite && penable) begin
+        // Do nothing for now
+        pready <= 1;
+        apb_state_ <= idle_state;
+      end
+    end
+  endtask
+
   always @(negedge preset_n or posedge pclk) begin
     if (preset_n == 0) begin
       apb_state_ <= idle_state;
-      prdata <= {(data_width) {1'b0}};
+      prdata <= {(data_width) {1'bz}};
       pready <= 0;
       pslverr <= 0;
     end else begin
@@ -230,24 +274,8 @@ module apb2_bldc_perpheral #(
             else apb_state_ <= r_enable;
           end
         end
-        r_enable: begin
-          if (psel && !pwrite && penable) begin
-            case (paddr)
-              reg_status: read_status_register();
-              // Write requested address for now
-              default: prdata[addr_width-1:0] <= paddr;
-            endcase
-            pready <= 1;
-            apb_state_ <= idle_state;
-          end
-        end
-        w_enable: begin
-          if (psel && !pwrite && penable) begin
-            // Do nothing for now
-            pready <= 1;
-            apb_state_ <= idle_state;
-          end
-        end
+        r_enable: read_registers();
+        w_enable: write_registers();
       endcase
     end
   end
