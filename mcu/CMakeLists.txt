@@ -15,6 +15,7 @@ project(
 )
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_subdirectory(lib/armpp)
 add_subdirectory(src)
