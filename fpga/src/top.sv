@@ -62,9 +62,10 @@ module top (
   wire [1:0] dir;
   wire [5:0] phase_enable;
 
-  apb2_bldc_perpheral bldc (
+  apb2_bldc_perpheral #(
+      .pole_pairs(11)
+  ) bldc (
       .pclk(apb_pclk),
-      .encoder_clk(sys_clk),
 
       .preset_n(apb_prst),
       .penable(apb_penable),

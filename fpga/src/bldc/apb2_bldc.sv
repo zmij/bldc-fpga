@@ -29,6 +29,8 @@ It provides an interface to control and monitor the BLDC motor.
  *  [31:0] value         RO
  * rotation duration    0x08
  *  [31:0] value         RO
+ * rmp                  0x0c
+ *  [31:0] value         RO
  */
 module apb2_bldc_perpheral #(
     // Data width for APB2 bus
@@ -37,8 +39,6 @@ module apb2_bldc_perpheral #(
     parameter addr_width = 8,
     // APB2 clock frequency
     parameter clk_freq_hz = 54_000_000,
-    // Encoder clock frequency
-    parameter enc_freq_hz = 27_000_000,
     // PWM clock frequency
     parameter pwm_clk_freq_hz = 100_286_000,
     // PWM output frequency
@@ -115,17 +115,6 @@ module apb2_bldc_perpheral #(
     /** @} */  // end of APB2_Interface
 
     /**
-    @name Encoder Interface Signals
-    @defgroup Encoder_Interface Encoder Interface Signals
-    @brief Signals used to interface with the encoder
-    @{
-    */
-    /**
-    @brief Input clock for the encoder
-    This signal is the input clock for the encoder.
-    */
-    input encoder_clk,
-    /**
     @brief Rotation detected by the encoder
     This signal represents the rotation direction detected by the encoder.
     The possible values are CW (clockwise) and CCW (counter-clockwise).
@@ -185,6 +174,7 @@ module apb2_bldc_perpheral #(
   localparam reg_status = 8'h00 * 4;
   localparam reg_enc_counter = 8'h01 * 4;
   localparam reg_enc_rot_duration = 8'h02 * 4;
+  localparam reg_rpm = 8'h03 * 4;
 
   typedef enum logic [1:0] {
     idle_state,
@@ -196,6 +186,7 @@ module apb2_bldc_perpheral #(
 
   wire [counter_width - 1:0] enc_counter_;
   wire [counter_width - 1:0] rot_duration_;
+  wire [counter_width - 1:0] rpm_;
   wire [2:0] sector_;
 
   three_phase_encoder #(
@@ -209,6 +200,7 @@ module apb2_bldc_perpheral #(
       .overall_counter(enc_counter_),
       .rotation_direction(detected_dir),
       .rotation_duration(rot_duration_),
+      .rpm(rpm_),
       .sector(sector_)
   );
 
@@ -219,6 +211,7 @@ module apb2_bldc_perpheral #(
           reg_status: read_status_register();
           reg_enc_counter: read_enc_counter();
           reg_enc_rot_duration: read_enc_rot_duration();
+          reg_rpm: read_rpm();
           // Write requested address for now
           default: prdata[addr_width-1:0] <= paddr;
         endcase
@@ -244,6 +237,12 @@ module apb2_bldc_perpheral #(
   task read_enc_rot_duration();
     begin
       prdata <= rot_duration_;
+    end
+  endtask
+
+  task read_rpm();
+    begin
+      prdata <= rpm_;
     end
   endtask
 

@@ -30,10 +30,12 @@ module three_phase_encoder #(
     input hall_states_t hall_values,  // Hall sensor values
     output reg [counter_width-1:0] overall_counter, // Overall counter that increments or decrements based on rotation
     output reg [counter_width-1:0] rotation_duration,  // Duration of one rotation in ticks
+    output [counter_width-1:0] rpm,
     output rotation_direction_t rotation_direction,  // Rotation direction
     output logic [2:0] sector  // Current sector
 );
   localparam cycle_size = 6;
+  localparam ticks_per_minute = clk_freq_hz * 60;
 
   hall_states_t prev_hall_values_;  // Previous hall sensor values
   logic [counter_width-1:0] cycle_counter_;  // Internal counter to keep track of ticks taking to make a cycle
@@ -78,13 +80,13 @@ module three_phase_encoder #(
       if (!idle_) begin
         if (direction_changed) begin
           transition_counter_ <= 0;
-          rotation_duration <= 0;
           cycle_counter_ <= 0;
+          rotation_duration <= 0;
         end else begin
           if (transition_counter_ < cycle_size) begin
             transition_counter_ <= transition_counter_ + 1;
           end else begin
-            rotation_duration <= cycle_counter_;
+            rotation_duration <= cycle_counter_ * pole_pairs;
             cycle_counter_ <= 0;
             transition_counter_ <= 0;
           end
@@ -193,6 +195,8 @@ module three_phase_encoder #(
       endcase
     end
   end
+
+  assign rpm = rotation_duration == 0 ? 0 : ticks_per_minute / rotation_duration;
 
 endmodule
 
