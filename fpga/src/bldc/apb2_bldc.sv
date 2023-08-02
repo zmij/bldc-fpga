@@ -11,6 +11,7 @@ It provides an interface to control and monitor the BLDC motor.
 
 `include "bldc/types.sv"
 `include "bldc/encoder.sv"
+`include "bldc/table_commutator.sv"
 
 /**
  * @class apb2_bldc_perpheral
@@ -25,6 +26,7 @@ It provides an interface to control and monitor the BLDC motor.
  *  [2:0] hall_values    RO
  *  [5:3] sector         RO
  *  [7:6] detected_dir   RO
+ *  [14:8] phase_enable  RO
  * counter              0x04
  *  [31:0] value         RO
  * rotation duration    0x08
@@ -204,6 +206,13 @@ module apb2_bldc_perpheral #(
       .sector(sector_)
   );
 
+  bldc_commutation_table comm_table_ (
+      .clk(pclk),
+      .dir(detected_dir),
+      .hall_values(hall_values),
+      .phase_enable(phase_enable)
+  );
+
   task read_registers();
     begin
       if (psel && !pwrite && penable) begin
@@ -222,9 +231,9 @@ module apb2_bldc_perpheral #(
   endtask
 
   task read_status_register();
-    localparam reg_status_padding = {(data_width - 8) {1'b0}};
+    localparam reg_status_padding = {(data_width - 14) {1'b0}};
     begin
-      prdata <= {reg_status_padding, detected_dir, sector_, hall_values};
+      prdata <= {reg_status_padding, phase_enable, detected_dir, sector_, hall_values};
     end
   endtask
 

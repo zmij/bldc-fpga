@@ -63,6 +63,7 @@ union status_registry {
     ah::raw_read_only_register_field<0, 3>                   hall_values;
     ah::read_only_register_field<hall_sector_t, 3, 3>        sector;
     ah::read_only_register_field<rotation_direction_t, 6, 2> detected_rotation;
+    ah::raw_read_only_register_field<8, 6>                   phase_enable;
 };
 static_assert(sizeof(status_registry) == sizeof(ah::raw_register));
 
@@ -102,6 +103,12 @@ public:
     sector() volatile const
     {
         return status_.sector;
+    }
+
+    std::uint32_t
+    phase_enable() volatile const
+    {
+        return status_.phase_enable;
     }
 
     std::uint32_t
@@ -173,11 +180,11 @@ main()
             dir         = motor->detected_rotation();
 
             uart0 << "t: " << width_out(10) << sysclock::now().time_since_epoch()
-                  << " hall: " << width_out(3) << bin_out << hall_values << " sector: " << dec_out
-                  << width_out(0) << motor->sector() << " dir: " << motor->detected_rotation()
-                  << " cnt: " << width_out(10) << motor->enc_counter() << " rot: " << width_out(10)
-                  << motor->rotation_duration() << " rpm " << width_out(5) << motor->rpm()
-                  << "\r\n";
+                  << " hall: " << width_out(3) << bin_out << hall_values
+                  << " phase enable: " << bin_out << width_out(6) << motor->phase_enable()
+                  << " sector: " << dec_out << width_out(0) << motor->sector()
+                  << " dir: " << motor->detected_rotation() << " cnt: " << width_out(10)
+                  << motor->enc_counter() << " rpm " << width_out(5) << motor->rpm() << "\r\n";
         }
     }
 }
