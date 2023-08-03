@@ -66,12 +66,12 @@ main()
             dir         = motor->detected_rotation();
 
             uart0 << "t: " << width_out(10) << sysclock::now().time_since_epoch()
-                  << " hall: " << width_out(3) << bin_out << hall_values
-                  << " phase enable: " << bin_out << width_out(6) << motor->phase_enable()
-                  << " sector: " << dec_out << width_out(0) << motor->sector()
-                  << " dir: " << motor->direction() << " detected: " << motor->detected_rotation()
-                  << " cnt: " << width_out(10) << motor->enc_counter() << " rpm " << width_out(5)
-                  << motor->rpm() << "\r\n";
+                  << (motor->error() ? " ERR" : " OK ") << " hall: " << width_out(3) << bin_out
+                  << hall_values << " phase enable: " << bin_out << width_out(6)
+                  << motor->phase_enable() << " sector: " << dec_out << width_out(0)
+                  << motor->sector() << " dir: " << motor->direction()
+                  << " detected: " << motor->detected_rotation() << " cnt: " << width_out(10)
+                  << motor->enc_counter() << " rpm " << width_out(5) << motor->rpm() << "\r\n";
         }
     }
 }

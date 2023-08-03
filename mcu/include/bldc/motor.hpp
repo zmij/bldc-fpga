@@ -19,10 +19,10 @@ enum class hall_sector_t {
 };
 
 enum rotation_direction_t {
-    none   = 0,
-    cw     = 0b01,
-    ccw    = 0b11,
-    break_ = 0b10,
+    none  = 0,
+    cw    = 0b01,
+    ccw   = 0b11,
+    brake = 0b10,
 };
 
 hal::uart::uart_handle&
@@ -38,7 +38,7 @@ operator<<(hal::uart::uart_handle& dev, rotation_direction_t dir)
     case rotation_direction_t::ccw:
         dev << "CCW";
         break;
-    case rotation_direction_t::break_:
+    case rotation_direction_t::brake:
         dev << "BRK";
         break;
     }
@@ -50,6 +50,7 @@ union status_registry {
     hal::read_only_register_field<hall_sector_t, 3, 3>        sector;
     hal::read_only_register_field<rotation_direction_t, 6, 2> detected_rotation;
     hal::raw_read_only_register_field<8, 6>                   phase_enable;
+    hal::bool_read_only_register_field<14>                    error;
 };
 static_assert(sizeof(status_registry) == sizeof(hal::raw_register));
 
@@ -89,6 +90,12 @@ public:
     hall_values() volatile const
     {
         return status_.hall_values;
+    }
+
+    bool
+    error() volatile const
+    {
+        return status_.error;
     }
 
     rotation_direction_t
