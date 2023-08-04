@@ -45,6 +45,37 @@ operator<<(hal::uart::uart_handle& dev, rotation_direction_t dir)
     return dev;
 }
 
+enum class driver_state_t {
+    idle       = 0,
+    startup    = 1,
+    reset_gate = 2,
+    run        = 3,
+    error      = 4,
+};
+
+hal::uart::uart_handle&
+operator<<(hal::uart::uart_handle& dev, driver_state_t val)
+{
+    switch (val) {
+    case driver_state_t::idle:
+        dev << "IDLE";
+        break;
+    case driver_state_t::startup:
+        dev << "STRT";
+        break;
+    case driver_state_t::reset_gate:
+        dev << " RST";
+        break;
+    case driver_state_t::run:
+        dev << " RUN";
+        break;
+    case driver_state_t::error:
+        dev << " ERR";
+        break;
+    }
+    return dev;
+}
+
 union status_registry {
     hal::raw_read_only_register_field<0, 3>                   hall_values;
     hal::read_only_register_field<hall_sector_t, 3, 3>        sector;
@@ -53,6 +84,7 @@ union status_registry {
     hal::bool_read_only_register_field<14>                    hall_error;
     hal::bool_read_only_register_field<15>                    driver_fault;
     hal::bool_read_only_register_field<16>                    overcurrent_warning;
+    hal::read_only_register_field<driver_state_t, 17, 3>      driver_state;
 };
 static_assert(sizeof(status_registry) == sizeof(hal::raw_register));
 
@@ -110,6 +142,12 @@ public:
     overcurrent() volatile const
     {
         return status_.overcurrent_warning;
+    }
+
+    driver_state_t
+    state() volatile const
+    {
+        return status_.driver_state;
     }
 
     rotation_direction_t
