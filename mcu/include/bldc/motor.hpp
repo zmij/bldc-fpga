@@ -50,7 +50,9 @@ union status_registry {
     hal::read_only_register_field<hall_sector_t, 3, 3>        sector;
     hal::read_only_register_field<rotation_direction_t, 6, 2> detected_rotation;
     hal::raw_read_only_register_field<8, 6>                   phase_enable;
-    hal::bool_read_only_register_field<14>                    error;
+    hal::bool_read_only_register_field<14>                    hall_error;
+    hal::bool_read_only_register_field<15>                    driver_fault;
+    hal::bool_read_only_register_field<16>                    overcurrent_warning;
 };
 static_assert(sizeof(status_registry) == sizeof(hal::raw_register));
 
@@ -93,9 +95,21 @@ public:
     }
 
     bool
-    error() volatile const
+    hall_error() volatile const
     {
-        return status_.error;
+        return status_.hall_error;
+    }
+
+    bool
+    driver_fault() volatile const
+    {
+        return status_.driver_fault;
+    }
+
+    bool
+    overcurrent() volatile const
+    {
+        return status_.overcurrent_warning;
     }
 
     rotation_direction_t

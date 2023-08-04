@@ -12,7 +12,11 @@ module top (
     output uart1_txd,
 
     input hall_states_t hall_values,
+    input fault_n,
+    input ocw_n,
     output [5:0] pwm_out,
+    output enable_out,
+
     output [3:0] probes,
 
     input reset_n
@@ -28,6 +32,7 @@ module top (
       .clkout(clk_100mhz_),  //output clkout
       .clkin(sys_clk)  //input clkin
   );
+
 
   // APB2 wires
   wire apb_pclk, apb_prst, apb_penable, apb_pwrite;
@@ -88,7 +93,10 @@ module top (
       .pslverr(apb_pslverr1),
 
       .hall_values(hall_values),
+      .fault_n(fault_n),
+      .overcurrent_n(ocw_n),
       .pwm_out(pwm_out),
+      .gate_enable(enable_out),
 
       .detected_dir(dir)
   );
