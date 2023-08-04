@@ -50,31 +50,44 @@ module bldc_commutation_table (
     input clk,
     input rotation_direction_t dir,
     input hall_states_t hall_values,
-    output logic [5:0] phase_enable
+    output logic [5:0] phase_enable,
+    output reg error
 );
-  reg  [5:0] commutation_table[0:2][0:5];
-  wire [1:0] table_number;
+  task phases_off(input set_error);
+    begin
+      phase_enable <= {PHASE_OFF, PHASE_OFF};
+      error <= set_error;
+    end
+  endtask
+
+  task brake();
+    begin
+      phase_enable <= {PHASE_OFF, PHASE_ON};
+      error <= 0;
+    end
+  endtask
+
+  task enable_phases(input phase_states_t hi, input phase_states_t lo);
+    begin
+      phase_enable <= (dir == DIR_CW) ? {hi, lo} : {lo, hi};
+      error <= 0;
+    end
+  endtask
 
   always @(posedge clk) begin
-    if (dir == DIR_NONE) phase_enable <= {PHASE_OFF, PHASE_OFF};
-    else if (dir == DIR_BRAKE) phase_enable <= {PHASE_OFF, PHASE_ON};
+    if (dir == DIR_NONE) phases_off(.set_error(0));
+    else if (dir == DIR_BRAKE) brake();
     else if (dir == DIR_CW || dir == DIR_CCW)
       case (hall_values)
-        HALL_AC:
-        phase_enable <= (dir == DIR_CW) ? {PHASE_A, PHASE_B} : {PHASE_B, PHASE_A};  // Sector 0
-        HALL_A:
-        phase_enable <= (dir == DIR_CW) ? {PHASE_A, PHASE_C} : {PHASE_C, PHASE_A};  // Sector 1
-        HALL_AB:
-        phase_enable <= (dir == DIR_CW) ? {PHASE_B, PHASE_C} : {PHASE_C, PHASE_B};  // Sector 2
-        HALL_B:
-        phase_enable <= (dir == DIR_CW) ? {PHASE_B, PHASE_A} : {PHASE_A, PHASE_B};  // Sector 3
-        HALL_BC:
-        phase_enable <= (dir == DIR_CW) ? {PHASE_C, PHASE_A} : {PHASE_A, PHASE_C};  // Sector 4
-        HALL_C:
-        phase_enable <= (dir == DIR_CW) ? {PHASE_C, PHASE_B} : {PHASE_B, PHASE_C};  // Sector 3
-        default: phase_enable <= {PHASE_OFF, PHASE_OFF};
+        HALL_AC: enable_phases(.hi(PHASE_A), .lo(PHASE_B));  // Sector 0
+        HALL_A:  enable_phases(.hi(PHASE_A), .lo(PHASE_C));  // Sector 1
+        HALL_AB: enable_phases(.hi(PHASE_B), .lo(PHASE_C));  // Sector 2
+        HALL_B:  enable_phases(.hi(PHASE_B), .lo(PHASE_A));  // Sector 3
+        HALL_BC: enable_phases(.hi(PHASE_C), .lo(PHASE_A));  // Sector 4
+        HALL_C:  enable_phases(.hi(PHASE_C), .lo(PHASE_B));  // Sector 5
+        default: phases_off(.set_error(1));
       endcase
-    else phase_enable <= {PHASE_OFF, PHASE_OFF};
+    else phases_off(.set_error(1));
   end
 endmodule
 

@@ -12,6 +12,7 @@ It provides an interface to control and monitor the BLDC motor.
 `include "bldc/types.sv"
 `include "bldc/encoder.sv"
 `include "bldc/table_commutator.sv"
+`include "bldc/pwm_generator.sv"
 
 /**
  * @class apb2_bldc_perpheral
@@ -27,6 +28,9 @@ It provides an interface to control and monitor the BLDC motor.
  *  [5:3] sector         RO
  *  [7:6] detected_dir   RO
  *  [14:8] phase_enable  RO
+ *  [15:15] hal_error    RO
+ *  [16:16] fault        RO
+ *  [17:17] ocw          RO
  * counter              0x04
  *  [31:0] value         RO
  * rotation duration    0x08
@@ -148,6 +152,7 @@ module apb2_bldc_perpheral #(
     @{
     */
 
+    input pwm_clk,
     /**
     @brief Phase enable signal
     This signal is used to enable the phases of the BLDC motor.
@@ -156,6 +161,10 @@ module apb2_bldc_perpheral #(
     phase enable signals (AL, BL, CL). 
     */
     output [5:0] phase_enable,
+    output [5:0] pwm_out,
+    input fault_n,  // Driver fault, active low
+    input overcurrent_n,  // Overcurrent warning, active low
+    output gate_enable,  // Enable driver gates
     /** @} */  // end of Motor_Control
 
     /**
@@ -181,6 +190,7 @@ module apb2_bldc_perpheral #(
   localparam reg_enc_rot_duration = 8'h02 * 4;
   localparam reg_rpm = 8'h03 * 4;
   localparam reg_control = 8'h04 * 4;
+  localparam reg_pwm_control = 8'h05 * 4;
 
   typedef enum logic [1:0] {
     idle_state,
@@ -190,9 +200,14 @@ module apb2_bldc_perpheral #(
 
   apb_state_t apb_state_;
 
-  reg enable_;
+  reg gate_enable_;
+  wire hall_error_;
   rotation_direction_t dir_;
+  logic [pwm_counter_width - 1:0] pwm_duty_;
 
+  //--------------------------------------------------------------------------
+  // Encoder instance
+  //--------------------------------------------------------------------------
   wire [counter_width - 1:0] enc_counter_;
   wire [counter_width - 1:0] rot_duration_;
   wire [counter_width - 1:0] rpm_;
@@ -213,12 +228,59 @@ module apb2_bldc_perpheral #(
       .sector(sector_)
   );
 
+  //--------------------------------------------------------------------------
+  // BLDC commutation table
+  //--------------------------------------------------------------------------
   bldc_commutation_table comm_table_ (
       .clk(pclk),
       .dir(dir_),
       .hall_values(hall_values),
-      .phase_enable(phase_enable)
+      .phase_enable(phase_enable),
+      .error(hall_error_)
   );
+
+  //--------------------------------------------------------------------------
+  // PWM generation
+  //--------------------------------------------------------------------------
+  wire pwm_;
+  logic [pwm_counter_width - 1:0] pwm_cycle_ticks_;
+
+  assign gate_enable = preset_n & gate_enable_ & ~hall_error_;
+
+  pwm_generator #(
+      .clock_freq_hz(pwm_clk_freq_hz),
+      .pwm_freq_hz  (pwm_freq_hz)
+  ) pwm_gen_ (
+      .enable(gate_enable),
+      .pwm_clk(pwm_clk),
+      .duty_width(pwm_duty_),
+      .cycle_ticks(pwm_cycle_ticks_),
+      .pwm(pwm_)
+  );
+
+  pwm_commutator #(
+      .channel_count(6)
+  ) pwm_comm_ (
+      .channel_enable(phase_enable),
+      .pwm_in(pwm_),
+      .pwm_out(pwm_out)
+  );
+
+  //--------------------------------------------------------------------------
+  // Reset task
+  //--------------------------------------------------------------------------
+  task reset();
+    begin
+      apb_state_ <= idle_state;
+      prdata <= {(data_width) {1'bz}};
+      pready <= 1;
+      pslverr <= 0;
+
+      gate_enable_ <= 0;
+      dir_ <= DIR_NONE;
+      pwm_duty_ <= 0;
+    end
+  endtask
 
   //--------------------------------------------------------------------------
   // Process idle state
@@ -247,6 +309,7 @@ module apb2_bldc_perpheral #(
           reg_enc_rot_duration: read_enc_rot_duration();
           reg_rpm: read_rpm();
           reg_control: read_control_register();
+          reg_pwm_control: read_pwm_control_register();
           // Write requested address for now
           default: prdata[addr_width-1:0] <= paddr;
         endcase
@@ -257,9 +320,18 @@ module apb2_bldc_perpheral #(
   endtask
 
   task read_status_register();
-    localparam reg_status_padding = {(data_width - 14) {1'b0}};
+    localparam reg_status_padding = {(data_width - 11) {1'b0}};
     begin
-      prdata <= {reg_status_padding, phase_enable, detected_dir, sector_, hall_values};
+      prdata <= {
+        reg_status_padding,
+        ~overcurrent_n,
+        ~fault_n,
+        hall_error_,
+        phase_enable,
+        detected_dir,
+        sector_,
+        hall_values
+      };
     end
   endtask
 
@@ -284,7 +356,14 @@ module apb2_bldc_perpheral #(
   task read_control_register();
     localparam reg_control_padding = {(data_width - 3) {1'b0}};
     begin
-      prdata <= {reg_control_padding, dir_, enable_};
+      prdata <= {reg_control_padding, dir_, gate_enable_};
+    end
+  endtask
+
+  task read_pwm_control_register();
+    localparam reg_pwm_padding = {(16 - pwm_counter_width) {1'b0}};
+    begin
+      prdata <= {reg_pwm_padding, pwm_cycle_ticks_, reg_pwm_padding, pwm_duty_};
     end
   endtask
 
@@ -296,6 +375,7 @@ module apb2_bldc_perpheral #(
       if (psel && pwrite && penable) begin
         case (paddr)
           reg_control: write_control_register();
+          reg_pwm_control: write_pwm_control_register();
           //default: pslverr <= 1;
         endcase
         pready <= 1;
@@ -306,19 +386,20 @@ module apb2_bldc_perpheral #(
 
   task write_control_register();
     begin
-      enable_ = pwdata[0];
+      gate_enable_ = pwdata[0];
       dir_ = rotation_direction_t'(pwdata[2:1]);
+    end
+  endtask
+
+  task write_pwm_control_register();
+    begin
+      pwm_duty_ <= pwdata[pwm_counter_width-1:0];
     end
   endtask
 
   always @(negedge preset_n or posedge pclk) begin
     if (preset_n == 0) begin
-      apb_state_ <= idle_state;
-      prdata <= {(data_width) {1'bz}};
-      pready <= 1;
-      pslverr <= 0;
-      enable_ <= 0;
-      dir_ <= DIR_NONE;
+      reset();
     end else begin
       case (apb_state_)
         idle_state: process_ide();

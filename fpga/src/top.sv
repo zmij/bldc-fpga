@@ -12,7 +12,11 @@ module top (
     output uart1_txd,
 
     input hall_states_t hall_values,
+    input fault_n,
+    input ocw_n,
     output [5:0] pwm_out,
+    output enable_out,
+
     output [3:0] probes,
 
     input reset_n
@@ -21,6 +25,11 @@ module top (
 
   gowin_pllvr_x2 pll_clk_54mhz_ (
       .clkout(clk_54mhz_),  //output clkout
+      .clkin(sys_clk)  //input clkin
+  );
+
+  gowin_pllvr_100mhz pll_clk_100mhz_ (
+      .clkout(clk_100mhz_),  //output clkout
       .clkin(sys_clk)  //input clkin
   );
 
@@ -68,6 +77,7 @@ module top (
       .pole_pairs(11)
   ) bldc (
       .pclk(apb_pclk),
+      .pwm_clk(clk_100mhz_),
 
       .preset_n(apb_prst),
       .penable(apb_penable),
@@ -82,8 +92,11 @@ module top (
       .pready(apb_pready1),
       .pslverr(apb_pslverr1),
 
-      .hall_values (hall_values),
-      .phase_enable(pwm_out),
+      .hall_values(hall_values),
+      .fault_n(fault_n),
+      .overcurrent_n(ocw_n),
+      .pwm_out(pwm_out),
+      .gate_enable(enable_out),
 
       .detected_dir(dir)
   );
