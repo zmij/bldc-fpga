@@ -25,8 +25,8 @@ module gate_driver_reset #(
     output logic reset_done
 );
   localparam ticks_per_us = clk_freq_hz / 1_000_000;
-  localparam fast_reset_ticks = ticks_per_us * fast_reset_us;
-  localparam slow_reset_ticks = ticks_per_us * slow_reset_us;
+  localparam fast_reset_ticks = ticks_per_us * fast_reset_us - 1;
+  localparam slow_reset_ticks = ticks_per_us * slow_reset_us - 1;
   localparam counter_width = $clog2(slow_reset_ticks) + 1;
 
   typedef logic [counter_width - 1:0] counter_t;
@@ -51,8 +51,8 @@ module gate_driver_reset #(
         state_ <= state_resetting;
         cnt_ <= 0;
         reset_done <= 0;
-        if (slow_reset) max_ = slow_reset_ticks;
-        else max_ = fast_reset_ticks;
+        if (slow_reset) max_ <= slow_reset_ticks;
+        else max_ <= fast_reset_ticks;
       end
     end
   endtask
@@ -80,7 +80,7 @@ module gate_driver_reset #(
     end
   end
 
-  assign driver_enable_out = state_ == state_resetting ? 0 : driver_enable;
+  assign driver_enable_out = (state_ == state_resetting) ? 0 : driver_enable;
 
 endmodule
 

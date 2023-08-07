@@ -247,7 +247,7 @@ module table_bldc_driver #(
     end
   end
 
-  assign pwm_enable_  = (state_ == state_run) ? 1 : 0;
+  assign pwm_enable_  = (state_ != state_idle) ? 1 : 0;
   assign driver_state = state_;
 
 endmodule
