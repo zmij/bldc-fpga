@@ -21,6 +21,11 @@ module top (
 
     input reset_n
 );
+  localparam clk_freq_hz = 54_000_000;
+  localparam pwm_clk_freq_hz = 100_286_000;
+  localparam pwm_freq_hz = 25_000;
+  localparam pole_pairs = 11;
+
   wire clk_54mhz_;
 
   gowin_pllvr_x2 pll_clk_54mhz_ (
@@ -74,7 +79,10 @@ module top (
   wire [5:0] phase_enable;
 
   apb2_bldc_perpheral #(
-      .pole_pairs(11)
+      .clk_freq_hz(clk_freq_hz),
+      .pwm_clk_freq_hz(pwm_clk_freq_hz),
+      .pwm_freq_hz(pwm_freq_hz),
+      .pole_pairs(pole_pairs)
   ) bldc (
       .pclk(apb_pclk),
       .pwm_clk(clk_100mhz_),

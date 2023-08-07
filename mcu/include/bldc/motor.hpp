@@ -45,12 +45,14 @@ operator<<(hal::uart::uart_handle& dev, rotation_direction_t dir)
     return dev;
 }
 
-enum class driver_state_t {
-    idle       = 0,
-    startup    = 1,
-    reset_gate = 2,
-    run        = 3,
-    error      = 4,
+enum class driver_state_t : std::uint32_t {
+    idle             = 0,
+    startup          = 1,
+    run              = 2,
+    error            = 3,
+    gate_reset_start = 4,
+    gate_reset_wait  = 5,
+    gate_reset_done  = 6,
 };
 
 hal::uart::uart_handle&
@@ -63,14 +65,25 @@ operator<<(hal::uart::uart_handle& dev, driver_state_t val)
     case driver_state_t::startup:
         dev << "STRT";
         break;
-    case driver_state_t::reset_gate:
-        dev << " RST";
-        break;
     case driver_state_t::run:
         dev << " RUN";
         break;
     case driver_state_t::error:
         dev << " ERR";
+        break;
+    case driver_state_t::gate_reset_start:
+        dev << "RSTS";
+        break;
+    case driver_state_t::gate_reset_wait:
+        dev << "RSTW";
+        break;
+    case driver_state_t::gate_reset_done:
+        dev << "RSTD";
+        break;
+    default:
+        // Invalid value, asterisks to stand out
+        dev << "**" << hal::uart::width_out(0)
+            << static_cast<std::underlying_type_t<driver_state_t>>(val) << "*";
         break;
     }
     return dev;

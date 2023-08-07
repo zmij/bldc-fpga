@@ -13,8 +13,13 @@ module debounce #(
     output signal_down,
     output signal_change
 );
+  typedef logic [counter_sz - 1:0] counter_t;
   reg [1:0] signal_synk_;
-  reg [counter_sz-1:0] cnt_ = 0;
+  counter_t cnt_ = 0;
+
+  function counter_t truncate(input logic [counter_sz:0] in);
+    return in[counter_sz-1:0];
+  endfunction
 
   always @(posedge clk) begin
     signal_synk_[0] <= signal_in;
@@ -28,7 +33,7 @@ module debounce #(
     if (signal_idle_) begin
       cnt_ <= 0;
     end else begin
-      cnt_ <= cnt_ + 1;
+      cnt_ <= truncate(cnt_ + 1);
       if (cnt_at_max_) begin
         signal_out <= signal_synk_[1];
       end

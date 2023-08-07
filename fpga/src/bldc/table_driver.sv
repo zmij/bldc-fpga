@@ -6,6 +6,7 @@
 `include "bldc/table_commutator.sv"
 `include "bldc/pwm_generator.sv"
 `include "bldc/debounce.sv"
+`include "bldc/gate_driver_reset.sv"
 
 module table_bldc_driver #(
     parameter clk_freq_hz = 54_000_000,
@@ -54,9 +55,11 @@ module table_bldc_driver #(
   typedef enum logic [2:0] {
     state_idle = 'd0,
     state_startup = 'd1,
-    state_reset_gate = 'd2,
-    state_run = 'd3,
-    state_error = 'd4
+    state_run = 'd2,
+    state_error = 'd3,
+    state_gate_reset_start = 'd4,
+    state_gate_reset_wait = 'd5,
+    state_gate_reset_done = 'd6
   } driver_state_t;
 
   driver_state_t state_;
@@ -108,14 +111,14 @@ module table_bldc_driver #(
   //--------------------------------------------------------------------------
   // PWM generation
   //--------------------------------------------------------------------------
-  wire pwm_;
-  assign gate_enable = reset_n & enable & ~hall_error;
+  wire  pwm_;
+  logic pwm_enable_;
 
   pwm_generator #(
       .clock_freq_hz(pwm_clk_freq_hz),
       .pwm_freq_hz  (pwm_freq_hz)
   ) pwm_gen_ (
-      .enable(gate_enable),
+      .enable(pwm_enable_),
       .pwm_clk(pwm_clk),
       .duty_width(pwm_duty),
       .cycle_ticks(pwm_cycle_ticks),
@@ -123,17 +126,103 @@ module table_bldc_driver #(
   );
 
   pwm_commutator #(
-      .channel_count(6)
-  ) pwm_comm_ (
-      .channel_enable(phase_enable),
+      .channel_count(3)
+  ) pwm_comm_hi_ (
+      .channel_enable(phase_enable[5:3]),
       .pwm_in(pwm_),
-      .pwm_out(pwm_out)
+      .pwm_out(pwm_out[5:3])
   );
 
+  assign pwm_out[2:0] = phase_enable[2:0];
+
+  //--------------------------------------------------------------------------
+  // Gate enable/reset module
+  //--------------------------------------------------------------------------
+  logic reset_start_, reset_done_;
+  gate_driver_reset #(
+      .clk_freq_hz(clk_freq_hz)
+  ) gate_reset_ (
+      .sys_clk(sys_clk),
+      .reset_n(reset_n),
+      .driver_enable(enable & ~hall_error),
+      .driver_enable_out(gate_enable),
+      .slow_reset(1'b1),
+      .reset_start(reset_start_),
+      .reset_done(reset_done_)
+  );
+
+  //--------------------------------------------------------------------------
+  // Tasks
+  //--------------------------------------------------------------------------
   task reset();
     begin
       state_ <= state_idle;
       desired_direction_ <= DIR_NONE;
+      reset_start_ <= 0;
+    end
+  endtask
+
+  task idle_state_task();
+    desired_direction_ <= direction;
+    if (hall_error) begin
+      state_ <= state_error;
+    end else if ((desired_direction_ != DIR_NONE) & enable) begin
+      state_ <= state_startup;
+    end
+  endtask
+
+  task startup_state_task();
+    begin
+      if (~fault_n) begin
+        state_ = state_gate_reset_start;
+      end else begin
+        state_ = state_run;
+      end
+    end
+  endtask
+
+  task run_state_task();
+    begin
+      if (~enable | (direction != desired_direction_)) begin
+        state_ = state_idle;
+      end else if (~fault_n) begin
+        state_ = state_gate_reset_start;
+      end
+    end
+  endtask
+
+  task error_state_task();
+    begin
+      if (~hall_error) begin
+        state_ = state_idle;
+      end
+    end
+  endtask
+
+  task gate_reset_start_task();
+    begin
+      reset_start_ <= 1;
+      state_ = state_gate_reset_wait;
+    end
+  endtask
+
+  task gate_reset_wait_task();
+    begin
+      reset_start_ <= 0;
+      if (reset_done_) begin
+        state_ <= state_gate_reset_done;
+      end
+    end
+  endtask
+
+  task gate_reset_done_task();
+    begin
+      if (fault_n) begin
+        state_ <= state_idle;
+      end else begin
+        // TODO calculate resets and go to error state
+        state_ <= state_gate_reset_start;
+      end
     end
   endtask
 
@@ -146,35 +235,19 @@ module table_bldc_driver #(
       reset();
     end else begin
       case (state_)
-        state_idle: begin
-          desired_direction_ <= direction;
-          if ((direction != DIR_NONE) & enable) begin
-            state_ <= state_startup;
-          end
-        end
-        state_startup: begin
-          if (~fault_n) begin
-            state_ = state_reset_gate;
-          end else begin
-            state_ = state_run;
-          end
-        end
-        state_reset_gate: begin
-          if (fault_n) begin
-            state_ = state_startup;
-          end
-        end
-        state_run: begin
-          if (~enable | (direction != desired_direction_)) begin
-            state_ = state_idle;
-          end else if (~fault_n) begin
-            state_ = state_reset_gate;
-          end
-        end
+        state_idle: idle_state_task();
+        state_startup: startup_state_task();
+        state_run: run_state_task();
+        state_error: error_state_task();
+
+        state_gate_reset_start: gate_reset_start_task();
+        state_gate_reset_wait:  gate_reset_wait_task();
+        state_gate_reset_done:  gate_reset_done_task();
       endcase
     end
   end
 
+  assign pwm_enable_  = (state_ == state_run) ? 1 : 0;
   assign driver_state = state_;
 
 endmodule

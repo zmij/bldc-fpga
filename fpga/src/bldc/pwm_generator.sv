@@ -10,7 +10,7 @@
  *
  * @param clock_freq_hz The frequency of the clock in Hz (default: 100_286_000)
  * @param pwm_freq_hz The desired PWM frequency in Hz (default: 100_000)
- * @param cnt_size The number of bits required to fit the counter (default: calculated based on clock and PWM frequency)
+ * @param counter_width The number of bits required to fit the counter (default: calculated based on clock and PWM frequency)
  * @param enable Input signal to enable/disable the PWM generator
  * @param pwm_clk Input clock signal for the PWM
  * @param duty_width Input signal specifying the width of the duty cycle
@@ -20,20 +20,25 @@
 module pwm_generator #(
     parameter clock_freq_hz = 100_286_000,
     parameter pwm_freq_hz = 100_000,
-    parameter cnt_size = $clog2(
+    parameter counter_width = $clog2(
         clock_freq_hz / pwm_freq_hz
     ) + 1  // number of bits to fit the counter
 ) (
     input enable,
     input pwm_clk,
-    input [cnt_size - 1:0] duty_width,
-    output [cnt_size - 1:0] cycle_ticks,
+    input [counter_width - 1:0] duty_width,
+    output [counter_width - 1:0] cycle_ticks,
     output reg pwm
 );
   localparam cycle_width = clock_freq_hz / pwm_freq_hz;
-  reg [cnt_size - 1:0] cnt;
+  typedef logic [counter_width - 1:0] counter_t;
+  counter_t cnt;
 
   assign cycle_ticks = cycle_width;
+
+  function counter_t truncate(logic [counter_width:0] in);
+    return in[counter_width-1:0];
+  endfunction
 
   always @(posedge pwm_clk or negedge enable) begin
     if (enable == 0) begin
@@ -41,7 +46,7 @@ module pwm_generator #(
       cnt <= 0;
     end else if (enable == 1) begin
       if (cnt == cycle_width - 1) cnt <= 0;
-      else cnt <= cnt + 1;
+      else cnt <= truncate(cnt + 1);
       pwm <= (cnt < duty_width) ? 1 : 0;
     end
   end
