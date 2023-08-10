@@ -46,38 +46,39 @@ main()
           << frequency_cast<armpp::frequency::megahertz>(clock.system_frequency()) << "\r\n"
           << "Ticks per milli: " << ticks_per_milli << "\r\n"
           << "Frequency period duration: "
-          << clock.system_frequency().period_duration<armpp::chrono::nanoseconds>() << " "
-          << clock.system_frequency().period_duration<armpp::chrono::picoseconds>() << "\r\n"
+          << clock.system_frequency().period_duration<armpp::chrono::nanoseconds>() << "\r\n"
           << "Motor device address " << motor.operator->() << "\r\n"
           << "PWM cycle length " << width_out(0) << motor->pwm_cycle() << "\r\n";
 
-    motor->set_direction(bldc::rotation_direction_t::ccw);
+    motor->set_invert_phases(true);
+    motor->set_direction(bldc::rotation_direction_t::cw);
     auto cycle = motor->pwm_cycle();
     motor->set_pwm_duty(cycle / 3);
     motor->enable();
 
     std::uint32_t              hall_values = 0;
     bldc::rotation_direction_t dir         = bldc::rotation_direction_t::none;
-    auto                       fault       = false;
+    auto                       state       = motor->state();
+    bool                       fault       = motor->driver_fault();
 
     uart0 << "Start the main loop\r\n";
 
     while (1) {
         timer0.delay(ticks_per_milli * 10);
         if (motor->hall_values() != hall_values || motor->detected_rotation() != dir
-            || motor->driver_fault() != fault) {
+            || motor->state() != state || motor->driver_fault() != fault) {
             hall_values = motor->hall_values();
             dir         = motor->detected_rotation();
+            state       = motor->state();
             fault       = motor->driver_fault();
 
-            uart0 << "t: " << width_out(10) << sysclock::now().time_since_epoch()
-                  << (motor->hall_error() ? " ERR" : " OK ") << " hall: " << width_out(3) << bin_out
-                  << hall_values << " phase enable: " << bin_out << width_out(6)
-                  << motor->phase_enable() << " sector: " << dec_out << width_out(0)
-                  << motor->sector() << " dir: " << motor->direction()
-                  << " detected: " << motor->detected_rotation() << " cnt: " << width_out(10)
-                  << motor->enc_counter() << " rpm: " << width_out(5) << motor->rpm()
-                  << " pwm: " << motor->pwm_duty() << "/" << width_out(0) << cycle
+            uart0 << "t: " << width_out(10) << sysclock::now().time_since_epoch() << " "
+                  << motor->state() << " hall: " << width_out(3) << bin_out << hall_values
+                  << " phase enable: " << bin_out << width_out(6) << motor->phase_enable()
+                  << " sector: " << dec_out << width_out(0) << motor->sector()
+                  << " dir: " << motor->direction() << " detected: " << motor->detected_rotation()
+                  << " cnt: " << width_out(10) << motor->enc_counter() << " rpm: " << width_out(5)
+                  << motor->rpm() << " pwm: " << motor->pwm_duty() << "/" << width_out(0) << cycle
                   << (motor->driver_fault() ? " FAULT" : "")
                   << (motor->overcurrent() ? " OVER" : "") << "\r\n";
         }

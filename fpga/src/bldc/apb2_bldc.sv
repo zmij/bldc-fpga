@@ -10,9 +10,7 @@ It provides an interface to control and monitor the BLDC motor.
 `define __APB2_BLDC_SV__
 
 `include "bldc/types.sv"
-`include "bldc/encoder.sv"
-`include "bldc/table_commutator.sv"
-`include "bldc/pwm_generator.sv"
+`include "bldc/table_driver.sv"
 
 /**
  * @class apb2_bldc_perpheral
@@ -24,13 +22,14 @@ It provides an interface to control and monitor the BLDC motor.
  *
  * Registers:
  * status               0x00
- *  [2:0] hall_values    RO
- *  [5:3] sector         RO
- *  [7:6] detected_dir   RO
- *  [14:8] phase_enable  RO
- *  [15:15] hal_error    RO
- *  [16:16] fault        RO
- *  [17:17] ocw          RO
+ *  [2:0] hall_values    RO off 0
+ *  [5:3] sector         RO off 3
+ *  [7:6] detected_dir   RO off 6
+ *  [14:8] phase_enable  RO off 8
+ *  [14:14] hal_error    RO off 14
+ *  [15:15] fault        RO
+ *  [16:16] ocw          RO
+ *  [19:17] driver_state RO // The size may increase
  * counter              0x04
  *  [31:0] value         RO
  * rotation duration    0x08
@@ -40,6 +39,7 @@ It provides an interface to control and monitor the BLDC motor.
  * control              0x10
  *  [0:0] enable         R/W
  *  [2:1] dir            R/W
+ *  [3:3] invert_phases  R/W
  */
 module apb2_bldc_perpheral #(
     // Data width for APB2 bus
@@ -200,70 +200,56 @@ module apb2_bldc_perpheral #(
 
   apb_state_t apb_state_;
 
-  reg gate_enable_;
+  reg enable_;
   wire hall_error_;
+  logic invert_phases_;
+
   rotation_direction_t dir_;
   logic [pwm_counter_width - 1:0] pwm_duty_;
+  wire [pwm_counter_width - 1:0] pwm_cycle_ticks_;
 
-  //--------------------------------------------------------------------------
-  // Encoder instance
-  //--------------------------------------------------------------------------
   wire [counter_width - 1:0] enc_counter_;
   wire [counter_width - 1:0] rot_duration_;
   wire [counter_width - 1:0] rpm_;
   wire [2:0] sector_;
 
-  three_phase_encoder #(
+  wire [2:0] driver_state_;
+
+  table_bldc_driver #(
       .clk_freq_hz(clk_freq_hz),
+      .pwm_clk_freq_hz(pwm_clk_freq_hz),
+      .pwm_freq_hz(pwm_freq_hz),
       .pole_pairs(pole_pairs),
-      .counter_width(counter_width)
-  ) enc_inst (
-      .clk(pclk),
-      .reset_n(preset_n),
+      .counter_width(counter_width),
+      .pwm_counter_width(pwm_counter_width)
+  ) driver_ (
+      .sys_clk(pclk),
+      .pwm_clk(pwm_clk),
+
       .hall_values(hall_values),
-      .overall_counter(enc_counter_),
-      .rotation_direction(detected_dir),
+      .invert_phases(invert_phases_),
+      .fault_n(fault_n),
+      .overcurrent_n(overcurrent_n),
+
+      .detected_dir(detected_dir),
+      .encoder_counter(enc_counter_),
       .rotation_duration(rot_duration_),
       .rpm(rpm_),
-      .sector(sector_)
-  );
+      .sector(sector_),
+      .hall_error(hall_error_),
 
-  //--------------------------------------------------------------------------
-  // BLDC commutation table
-  //--------------------------------------------------------------------------
-  bldc_commutation_table comm_table_ (
-      .clk(pclk),
-      .dir(dir_),
-      .hall_values(hall_values),
       .phase_enable(phase_enable),
-      .error(hall_error_)
-  );
+      .pwm_out(pwm_out),
+      .gate_enable(gate_enable),
 
-  //--------------------------------------------------------------------------
-  // PWM generation
-  //--------------------------------------------------------------------------
-  wire pwm_;
-  logic [pwm_counter_width - 1:0] pwm_cycle_ticks_;
+      .enable(enable_),
+      .direction(dir_),
+      .pwm_duty(pwm_duty_),
 
-  assign gate_enable = preset_n & gate_enable_ & ~hall_error_;
+      .pwm_cycle_ticks(pwm_cycle_ticks_),
+      .driver_state(driver_state_),
 
-  pwm_generator #(
-      .clock_freq_hz(pwm_clk_freq_hz),
-      .pwm_freq_hz  (pwm_freq_hz)
-  ) pwm_gen_ (
-      .enable(gate_enable),
-      .pwm_clk(pwm_clk),
-      .duty_width(pwm_duty_),
-      .cycle_ticks(pwm_cycle_ticks_),
-      .pwm(pwm_)
-  );
-
-  pwm_commutator #(
-      .channel_count(6)
-  ) pwm_comm_ (
-      .channel_enable(phase_enable),
-      .pwm_in(pwm_),
-      .pwm_out(pwm_out)
+      .reset_n(preset_n)
   );
 
   //--------------------------------------------------------------------------
@@ -276,7 +262,7 @@ module apb2_bldc_perpheral #(
       pready <= 1;
       pslverr <= 0;
 
-      gate_enable_ <= 0;
+      enable_ <= 0;
       dir_ <= DIR_NONE;
       pwm_duty_ <= 0;
     end
@@ -324,6 +310,7 @@ module apb2_bldc_perpheral #(
     begin
       prdata <= {
         reg_status_padding,
+        driver_state_,
         ~overcurrent_n,
         ~fault_n,
         hall_error_,
@@ -354,9 +341,9 @@ module apb2_bldc_perpheral #(
   endtask
 
   task read_control_register();
-    localparam reg_control_padding = {(data_width - 3) {1'b0}};
+    localparam reg_control_padding = {(data_width - 4) {1'b0}};
     begin
-      prdata <= {reg_control_padding, dir_, gate_enable_};
+      prdata <= {reg_control_padding, invert_phases_, dir_, enable_};
     end
   endtask
 
@@ -386,8 +373,9 @@ module apb2_bldc_perpheral #(
 
   task write_control_register();
     begin
-      gate_enable_ = pwdata[0];
+      enable_ = pwdata[0];
       dir_ = rotation_direction_t'(pwdata[2:1]);
+      invert_phases_ = pwdata[3];
     end
   endtask
 
@@ -397,6 +385,9 @@ module apb2_bldc_perpheral #(
     end
   endtask
 
+  //--------------------------------------------------------------------------
+  // Always block for handling APB requests
+  //--------------------------------------------------------------------------
   always @(negedge preset_n or posedge pclk) begin
     if (preset_n == 0) begin
       reset();

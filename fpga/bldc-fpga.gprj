@@ -10,5 +10,6 @@
         <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/gowin_pllvr/gowin_pllvr_100mhz.v" type="file.verilog" enable="1"/>
         <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/top.sv" type="file.verilog" enable="1"/>
         <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/bldc-fpga.cst" type="file.cst" enable="1"/>
+        <File path="/media/psf/Home/gitrepo/bldc-fpga/fpga/src/bldc-fpga.sdc" type="file.sdc" enable="1"/>
     </FileList>
 </Project>

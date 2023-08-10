@@ -37,9 +37,11 @@ module three_phase_encoder #(
   localparam cycle_size = 6;
   localparam ticks_per_minute = clk_freq_hz * 60;
 
+  typedef logic [counter_width-1:0] counter_t;
+
   hall_states_t prev_hall_values_;  // Previous hall sensor values
-  logic [counter_width-1:0] cycle_counter_;  // Internal counter to keep track of ticks taking to make a cycle
-  logic [counter_width-1:0] idle_counter_; // Internal counter to keep track of ticks when nothin happens
+  counter_t cycle_counter_;  // Internal counter to keep track of ticks taking to make a cycle
+  counter_t idle_counter_;  // Internal counter to keep track of ticks when nothin happens
   logic [2:0] transition_counter_;  // Counter for detecting change in direction
   logic direction_changed;  // Flag to indicate change in direction
   logic idle_;
