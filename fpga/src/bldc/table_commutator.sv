@@ -50,9 +50,13 @@ module bldc_commutation_table (
     input clk,
     input rotation_direction_t dir,
     input hall_states_t hall_values,
+    input logic invert_phases,
     output logic [5:0] phase_enable,
     output reg error
 );
+  hall_states_t hall_values_;
+  assign hall_values_ = invert_phases == 0 ? hall_values : hall_states_t'(~hall_values);
+
   task phases_off(input set_error);
     begin
       phase_enable <= {PHASE_OFF, PHASE_OFF};
@@ -78,7 +82,7 @@ module bldc_commutation_table (
     if (dir == DIR_NONE) phases_off(.set_error(0));
     else if (dir == DIR_BRAKE) brake();
     else if (dir == DIR_CW || dir == DIR_CCW)
-      case (hall_values)
+      case (hall_values_)
         HALL_AC: enable_phases(.hi(PHASE_A), .lo(PHASE_B));  // Sector 0
         HALL_A:  enable_phases(.hi(PHASE_A), .lo(PHASE_C));  // Sector 1
         HALL_AB: enable_phases(.hi(PHASE_B), .lo(PHASE_C));  // Sector 2

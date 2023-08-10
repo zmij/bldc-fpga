@@ -8,6 +8,8 @@
 `include "bldc/debounce.sv"
 `include "bldc/gate_driver_reset.sv"
 
+//`define GATE_RESET_STATES
+
 module table_bldc_driver #(
     parameter clk_freq_hz = 54_000_000,
     parameter pwm_clk_freq_hz = 100_286_000,
@@ -22,6 +24,7 @@ module table_bldc_driver #(
     /** @name Motor feedback interface */
     //@}
     input hall_states_t hall_values,  // TODO debounce values
+    input logic invert_phases,
     input fault_n,  // Driver fault, active low
     input overcurrent_n,  // Overcurrent warning, active low
     //@{
@@ -71,7 +74,7 @@ module table_bldc_driver #(
     for (i = 0; i < 3; ++i) begin : hall_debounce
       debounce_us #(
           .clk_freq_hz(clk_freq_hz),
-          .debounce_time_us(50)
+          .debounce_time_us(10)
       ) db (
           .clk(sys_clk),
           .signal_in(hall_values[i]),
@@ -105,6 +108,7 @@ module table_bldc_driver #(
       .clk(sys_clk),
       .dir(direction),
       .hall_values(hall_values_debounced_),
+      .invert_phases(invert_phases),
       .phase_enable(phase_enable),
       .error(hall_error)
   );
@@ -173,21 +177,39 @@ module table_bldc_driver #(
 
   task startup_state_task();
     begin
+`ifdef GATE_RESET_STATES
       if (~fault_n) begin
         state_ = state_gate_reset_start;
       end else begin
         state_ = state_run;
       end
+`else
+      if (hall_error) begin
+        state_ <= state_error;
+      end else begin
+        state_ = state_run;
+      end
+`endif
     end
   endtask
 
   task run_state_task();
     begin
-      if (~enable | (direction != desired_direction_)) begin
+`ifdef GATE_RESET_STATES
+      if (hall_error) begin
+        state_ <= state_error;
+      end else if (~enable | (direction != desired_direction_)) begin
         state_ = state_idle;
       end else if (~fault_n) begin
         state_ = state_gate_reset_start;
       end
+`else
+      if (hall_error) begin
+        state_ <= state_error;
+      end else if (~enable | (direction != desired_direction_)) begin
+        state_ = state_idle;
+      end
+`endif
     end
   endtask
 

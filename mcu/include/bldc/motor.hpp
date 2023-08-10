@@ -108,6 +108,7 @@ using rpm_register          = hal::raw_read_only_register_field<0, 32>;
 union control_register {
     hal::bool_read_write_register_field<0>                     enable;
     hal::read_write_register_field<rotation_direction_t, 1, 2> dir;
+    hal::bool_read_write_register_field<3>                     invert_phases;
 };
 static_assert(sizeof(control_register) == sizeof(hal::raw_register));
 
@@ -227,6 +228,18 @@ public:
     set_direction(rotation_direction_t dir)
     {
         ctl_.dir = dir;
+    }
+
+    bool
+    phases_inverted() volatile const
+    {
+        return ctl_.invert_phases;
+    }
+
+    void
+    set_invert_phases(bool val)
+    {
+        ctl_.invert_phases = val;
     }
 
     std::uint32_t

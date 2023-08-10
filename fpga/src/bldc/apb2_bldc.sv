@@ -39,6 +39,7 @@ It provides an interface to control and monitor the BLDC motor.
  * control              0x10
  *  [0:0] enable         R/W
  *  [2:1] dir            R/W
+ *  [3:3] invert_phases  R/W
  */
 module apb2_bldc_perpheral #(
     // Data width for APB2 bus
@@ -201,6 +202,8 @@ module apb2_bldc_perpheral #(
 
   reg enable_;
   wire hall_error_;
+  logic invert_phases_;
+
   rotation_direction_t dir_;
   logic [pwm_counter_width - 1:0] pwm_duty_;
   wire [pwm_counter_width - 1:0] pwm_cycle_ticks_;
@@ -224,6 +227,7 @@ module apb2_bldc_perpheral #(
       .pwm_clk(pwm_clk),
 
       .hall_values(hall_values),
+      .invert_phases(invert_phases_),
       .fault_n(fault_n),
       .overcurrent_n(overcurrent_n),
 
@@ -337,9 +341,9 @@ module apb2_bldc_perpheral #(
   endtask
 
   task read_control_register();
-    localparam reg_control_padding = {(data_width - 3) {1'b0}};
+    localparam reg_control_padding = {(data_width - 4) {1'b0}};
     begin
-      prdata <= {reg_control_padding, dir_, enable_};
+      prdata <= {reg_control_padding, invert_phases_, dir_, enable_};
     end
   endtask
 
@@ -371,6 +375,7 @@ module apb2_bldc_perpheral #(
     begin
       enable_ = pwdata[0];
       dir_ = rotation_direction_t'(pwdata[2:1]);
+      invert_phases_ = pwdata[3];
     end
   endtask
 

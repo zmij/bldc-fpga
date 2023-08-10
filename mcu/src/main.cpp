@@ -50,7 +50,8 @@ main()
           << "Motor device address " << motor.operator->() << "\r\n"
           << "PWM cycle length " << width_out(0) << motor->pwm_cycle() << "\r\n";
 
-    motor->set_direction(bldc::rotation_direction_t::ccw);
+    motor->set_invert_phases(true);
+    motor->set_direction(bldc::rotation_direction_t::cw);
     auto cycle = motor->pwm_cycle();
     motor->set_pwm_duty(cycle / 3);
     motor->enable();
@@ -58,16 +59,18 @@ main()
     std::uint32_t              hall_values = 0;
     bldc::rotation_direction_t dir         = bldc::rotation_direction_t::none;
     auto                       state       = motor->state();
+    bool                       fault       = motor->driver_fault();
 
     uart0 << "Start the main loop\r\n";
 
     while (1) {
         timer0.delay(ticks_per_milli * 10);
         if (motor->hall_values() != hall_values || motor->detected_rotation() != dir
-            || motor->state() != state) {
+            || motor->state() != state || motor->driver_fault() != fault) {
             hall_values = motor->hall_values();
             dir         = motor->detected_rotation();
             state       = motor->state();
+            fault       = motor->driver_fault();
 
             uart0 << "t: " << width_out(10) << sysclock::now().time_since_epoch() << " "
                   << motor->state() << " hall: " << width_out(3) << bin_out << hall_values
