@@ -270,29 +270,30 @@ public:
     void
     run(rotation_direction_t dir)
     {
-        ctl_.enable = false;
-        control_register new_val{.raw = ctl_.raw};
-        new_val.dir    = dir;
-        new_val.enable = true;
-        ctl_.raw       = new_val.raw;
+        set_control(dir, true);
     }
 
     void
     brake()
     {
-        ctl_.enable = false;
-        control_register new_val{.raw = ctl_.raw};
-        new_val.dir    = rotation_direction_t::brake;
-        new_val.enable = true;
-        ctl_.raw       = new_val.raw;
+        set_control(rotation_direction_t::brake, true);
     }
 
     void
     stop()
     {
+        set_control(rotation_direction_t::none, false);
+    }
+
+private:
+    void
+    set_control(rotation_direction_t dir, bool enabled)
+    {
+        if (enabled)
+            ctl_.enable = false;
         control_register new_val{.raw = ctl_.raw};
-        new_val.dir    = rotation_direction_t::none;
-        new_val.enable = false;
+        new_val.dir    = dir;
+        new_val.enable = enabled;
         ctl_.raw       = new_val.raw;
     }
 
