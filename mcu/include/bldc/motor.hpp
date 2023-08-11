@@ -7,6 +7,7 @@
 namespace bldc {
 
 namespace hal = armpp::hal;
+using hal::enabled_t;
 
 enum class hall_sector_t {
     s0   = 0,
@@ -50,9 +51,10 @@ enum class driver_state_t : std::uint32_t {
     startup          = 1,
     run              = 2,
     error            = 3,
-    gate_reset_start = 4,
-    gate_reset_wait  = 5,
-    gate_reset_done  = 6,
+    position_control = 4,
+    gate_reset_start = 5,
+    gate_reset_wait  = 6,
+    gate_reset_done  = 7,
 };
 
 hal::uart::uart_handle&
@@ -70,6 +72,9 @@ operator<<(hal::uart::uart_handle& dev, driver_state_t val)
         break;
     case driver_state_t::error:
         dev << " ERR";
+        break;
+    case driver_state_t::position_control:
+        dev << " POS";
         break;
     case driver_state_t::gate_reset_start:
         dev << "RSTS";
@@ -98,6 +103,7 @@ union status_registry {
     hal::bool_read_only_register_field<15>                    driver_fault;
     hal::bool_read_only_register_field<16>                    overcurrent_warning;
     hal::read_only_register_field<driver_state_t, 17, 3>      driver_state;
+    hal::raw_read_only_register_field<20, 5>                  pole_pairs;
 };
 static_assert(sizeof(status_registry) == sizeof(hal::raw_register));
 
@@ -119,6 +125,13 @@ union pwm_control_register {
 };
 static_assert(sizeof(pwm_control_register) == sizeof(hal::raw_register));
 
+union pos_control_register {
+    hal::read_write_register_field<enabled_t, 0, 1> enable;
+};
+static_assert(sizeof(pos_control_register) == sizeof(hal::raw_register));
+
+using target_pos_register = hal::raw_read_write_register_field<0, 32>;
+
 /**
  * @brief APB2 BLDC motor driver peripheral
  *
@@ -127,7 +140,7 @@ static_assert(sizeof(pwm_control_register) == sizeof(hal::raw_register));
 class bldc_motor {
 public:
     static constexpr hal::address base_address   = 0x40002400;
-    static constexpr std::size_t  register_count = 6;
+    static constexpr std::size_t  register_count = 8;
 
     status_registry volatile const&
     status() const
@@ -165,6 +178,12 @@ public:
         return status_.driver_state;
     }
 
+    std::uint32_t
+    pole_pairs() volatile const
+    {
+        return status_.pole_pairs;
+    }
+
     rotation_direction_t
     detected_rotation() volatile const
     {
@@ -187,6 +206,12 @@ public:
     enc_counter() volatile const
     {
         return enc_counter_;
+    }
+
+    std::uint32_t
+    target_position() volatile const
+    {
+        return target_;
     }
 
     /**
@@ -282,10 +307,30 @@ public:
         set_control(rotation_direction_t::none, false);
     }
 
+    void
+    go_to_position(std::uint32_t pos)
+    {
+        target_         = pos;
+        pos_ctl_.enable = enabled_t::enabled;
+        ctl_.enable     = true;
+    }
+
+    void
+    step(rotation_direction_t dir, std::uint32_t steps)
+    {
+        auto pos = enc_counter();
+        if (dir == rotation_direction_t::cw)
+            pos += steps;
+        else if (dir == rotation_direction_t::ccw)
+            pos -= steps;
+        go_to_position(pos);
+    }
+
 private:
     void
     set_control(rotation_direction_t dir, bool enabled)
     {
+        pos_ctl_.enable = enabled_t::disabled;
         if (enabled)
             ctl_.enable = false;
         control_register new_val{.raw = ctl_.raw};
@@ -301,6 +346,8 @@ private:
     rpm_register                    rpm_;
     control_register                ctl_;
     pwm_control_register            pwm_ctl_;
+    pos_control_register            pos_ctl_;
+    target_pos_register             target_;
 };
 static_assert(sizeof(bldc_motor) == sizeof(hal::raw_register) * bldc_motor::register_count);
 
