@@ -24,6 +24,7 @@ module top (
   localparam clk_freq_hz = 54_000_000;
   localparam pwm_clk_freq_hz = 100_286_000;
   localparam pwm_freq_hz = 25_000;
+  localparam rpm_measurement_ms = 100;
   localparam pole_pairs = 11;
 
   wire clk_54mhz_;
@@ -82,6 +83,7 @@ module top (
       .clk_freq_hz(clk_freq_hz),
       .pwm_clk_freq_hz(pwm_clk_freq_hz),
       .pwm_freq_hz(pwm_freq_hz),
+      .rpm_measurement_ms(rpm_measurement_ms),
       .pole_pairs(pole_pairs)
   ) bldc (
       .pclk(apb_pclk),

@@ -66,22 +66,24 @@ get_commands()
          }},
         {"up",
          [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             using armpp::hal::uart::dec_out;
              uart << "Accelerate\r\n";
              auto pwm = m->pwm_duty() + 50;
              if (pwm > m->pwm_cycle() / 2) {
                  pwm = m->pwm_cycle() / 2;
              }
-             uart << "New PWM " << pwm << "\r\n";
+             uart << "New PWM " << dec_out << pwm << "\r\n";
              m->set_pwm_duty(pwm);
          }},
         {"down",
          [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             using armpp::hal::uart::dec_out;
              uart << "Deccelerate\r\n";
              auto pwm = m->pwm_duty();
              if (pwm >= 50) {
                  pwm = pwm - 50;
              }
-             uart << "New PWM " << pwm << "\r\n";
+             uart << "New PWM " << dec_out << pwm << "\r\n";
              m->set_pwm_duty(pwm);
          }},
     }};
