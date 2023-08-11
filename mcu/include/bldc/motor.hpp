@@ -229,14 +229,6 @@ public:
         return ctl_.dir;
     }
 
-    void
-    set_direction(rotation_direction_t dir)
-    {
-        control_register new_val{.raw = ctl_.raw};
-        new_val.dir = dir;
-        ctl_.raw    = new_val.raw;
-    }
-
     bool
     phases_inverted() volatile const
     {
