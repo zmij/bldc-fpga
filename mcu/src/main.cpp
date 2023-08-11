@@ -40,10 +40,13 @@ struct command {
     }
 };
 
-std::array<command, 6> const&
+auto const&
 get_commands()
 {
-    static std::array<command, 6> const commands{{
+    constexpr std::uint32_t turn_count = 100;
+    using armpp::hal::uart::dec_out;
+    using bldc::rotation_direction_t;
+    static std::array<command, 11> const commands{{
         {std::string_view{"stop"},
          [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
              uart << "Stop\r\n";
@@ -66,7 +69,6 @@ get_commands()
          }},
         {"up",
          [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
-             using armpp::hal::uart::dec_out;
              uart << "Accelerate\r\n";
              auto pwm = m->pwm_duty() + 50;
              if (pwm > m->pwm_cycle() / 2) {
@@ -77,7 +79,6 @@ get_commands()
          }},
         {"down",
          [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
-             using armpp::hal::uart::dec_out;
              uart << "Deccelerate\r\n";
              auto pwm = m->pwm_duty();
              if (pwm >= 50) {
@@ -85,6 +86,31 @@ get_commands()
              }
              uart << "New PWM " << dec_out << pwm << "\r\n";
              m->set_pwm_duty(pwm);
+         }},
+        {"turncw", 
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << dec_out << turn_count <<" turns CW\r\n"; 
+             m->step(rotation_direction_t::cw, turn_count * 6 * m->pole_pairs()); 
+         }},
+        {"turnccw", 
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << dec_out << turn_count << " turns CCW\r\n"; 
+             m->step(rotation_direction_t::ccw, turn_count * 6 * m->pole_pairs()); 
+         }},
+        {"stepcw", 
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << dec_out << "Step CW\r\n"; 
+             m->step(rotation_direction_t::cw, 1); 
+         }},
+        {"stepccw", 
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << dec_out << "Step CCW\r\n"; 
+             m->step(rotation_direction_t::ccw, 1); 
+         }},
+        {"zero", 
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << " go to zero\r\n"; 
+             m->go_to_position(0); 
          }},
     }};
     return commands;
@@ -183,6 +209,7 @@ main()
           << "Frequency period duration: "
           << clock.system_frequency().period_duration<armpp::chrono::nanoseconds>() << "\r\n"
           << "Motor device address " << motor.operator->() << "\r\n"
+          << "Pole pairs " << width_out(0) << motor->pole_pairs() << "\r\n"
           << "PWM cycle length " << width_out(0) << motor->pwm_cycle() << "\r\n";
 
     motor->set_invert_phases(true);
@@ -192,7 +219,7 @@ main()
     uart0->set_rx_handler(cp);
 
     auto cycle = motor->pwm_cycle();
-    motor->set_pwm_duty(cycle / 3);
+    motor->set_pwm_duty(cycle / 20);
 
     std::uint32_t              hall_values = 0;
     bldc::rotation_direction_t dir         = bldc::rotation_direction_t::none;
@@ -212,12 +239,13 @@ main()
 
             uart0 << "t: " << width_out(10) << sysclock::now().time_since_epoch() << " "
                   << motor->state() << " hall: " << width_out(3) << bin_out << hall_values
-                  << " phase enable: " << bin_out << width_out(6) << motor->phase_enable()
-                  << " sector: " << dec_out << width_out(0) << motor->sector()
+                  << " phase enable: " << bin_out << width_out(6) << motor->phase_enable()    //
+                  << " sector: " << dec_out << width_out(0) << motor->sector()                //
                   << " dir: " << motor->direction() << " detected: " << motor->detected_rotation()
-                  << " cnt: " << width_out(10) << motor->enc_counter() << " rpm: " << width_out(5)
-                  << motor->rpm() << " pwm: " << motor->pwm_duty() << "/" << width_out(0) << cycle
-                  << (motor->driver_fault() ? " FAULT" : "")
+                  << " cnt: " << width_out(10) << motor->enc_counter()    //
+                  << " tgt: " << motor->target_position()                 //
+                  << " rpm: " << width_out(5) << motor->rpm() << " pwm: " << motor->pwm_duty()
+                  << "/" << width_out(0) << cycle << (motor->driver_fault() ? " FAULT" : "")
                   << (motor->overcurrent() ? " OVER" : "");
             uart0 << "\r\n";
         }

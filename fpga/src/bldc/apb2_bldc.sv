@@ -30,6 +30,7 @@ It provides an interface to control and monitor the BLDC motor.
  *  [15:15] fault        RO
  *  [16:16] ocw          RO
  *  [19:17] driver_state RO // The size may increase
+ *  [25:20] pole_pairs   RO
  * counter              0x04
  *  [31:0] value         RO
  * rotation duration    0x08
@@ -40,6 +41,13 @@ It provides an interface to control and monitor the BLDC motor.
  *  [0:0] enable         R/W
  *  [2:1] dir            R/W
  *  [3:3] invert_phases  R/W
+ * pwm control          0x14
+ *  [15:0] pwm_duty      R/W
+ *  [31:16] cycle_ticks  R/W
+ * pos control          0x18
+ *  [0:0] enable         R/W
+ * target pos           0x1c
+ *  [31:0] pos           R/W
  */
 module apb2_bldc_perpheral #(
     // Data width for APB2 bus
@@ -193,6 +201,14 @@ module apb2_bldc_perpheral #(
   localparam reg_rpm = 8'h03 * 4;
   localparam reg_control = 8'h04 * 4;
   localparam reg_pwm_control = 8'h05 * 4;
+  localparam reg_pos_control = 8'h06 * 4;
+  localparam reg_tgt_pos = 8'h07 * 4;
+
+  typedef logic [pwm_counter_width - 1:0] pwm_counter_t;
+  typedef logic [counter_width - 1:0] enc_counter_t;
+
+  logic [4:0] pole_pairs_;
+  assign pole_pairs_ = pole_pairs;
 
   typedef enum logic [1:0] {
     idle_state,
@@ -207,12 +223,18 @@ module apb2_bldc_perpheral #(
   logic invert_phases_;
 
   rotation_direction_t dir_;
-  logic [pwm_counter_width - 1:0] pwm_duty_;
-  wire [pwm_counter_width - 1:0] pwm_cycle_ticks_;
+  rotation_direction_t dir_out_;
+  pwm_counter_t pwm_duty_;
+  pwm_counter_t pwm_duty_out_;
+  pwm_counter_t pwm_cycle_ticks_;
 
-  wire [counter_width - 1:0] enc_counter_;
-  wire [counter_width - 1:0] transitions_per_period_;
-  wire [counter_width - 1:0] rpm_;
+  enc_counter_t enc_counter_;
+  enc_counter_t transitions_per_period_;
+  enc_counter_t rpm_;
+
+  logic pos_ctl_enable_;
+  enc_counter_t target_poisition_;
+
   wire [2:0] sector_;
 
   wire [2:0] driver_state_;
@@ -236,7 +258,7 @@ module apb2_bldc_perpheral #(
 
       .detected_dir(detected_dir),
       .encoder_counter(enc_counter_),
-      .transitions_per_period(transitions_per_period),
+      .transitions_per_period(transitions_per_period_),
       .rpm(rpm_),
       .sector(sector_),
       .hall_error(hall_error_),
@@ -248,6 +270,11 @@ module apb2_bldc_perpheral #(
       .enable(enable_),
       .direction(dir_),
       .pwm_duty(pwm_duty_),
+
+      .pos_ctl_enable(pos_ctl_enable_),
+      .target_position(target_poisition_),
+      .pwm_duty_out(pwm_duty_out_),
+      .dir_out(dir_out_),
 
       .pwm_cycle_ticks(pwm_cycle_ticks_),
       .driver_state(driver_state_),
@@ -299,6 +326,8 @@ module apb2_bldc_perpheral #(
           reg_rpm: read_rpm();
           reg_control: read_control_register();
           reg_pwm_control: read_pwm_control_register();
+          reg_pos_control: read_pos_control_register();
+          reg_tgt_pos: read_target_pos_register();
           // Write requested address for now
           default: prdata[addr_width-1:0] <= paddr;
         endcase
@@ -309,10 +338,11 @@ module apb2_bldc_perpheral #(
   endtask
 
   task read_status_register();
-    localparam reg_status_padding = {(data_width - 11) {1'b0}};
+    localparam reg_status_padding = {(data_width - 6) {1'b0}};
     begin
       prdata <= {
         reg_status_padding,
+        pole_pairs_,
         driver_state_,
         ~overcurrent_n,
         ~fault_n,
@@ -346,14 +376,27 @@ module apb2_bldc_perpheral #(
   task read_control_register();
     localparam reg_control_padding = {(data_width - 4) {1'b0}};
     begin
-      prdata <= {reg_control_padding, invert_phases_, dir_, enable_};
+      prdata <= {reg_control_padding, invert_phases_, dir_out_, enable_};
     end
   endtask
 
   task read_pwm_control_register();
     localparam reg_pwm_padding = {(16 - pwm_counter_width) {1'b0}};
     begin
-      prdata <= {reg_pwm_padding, pwm_cycle_ticks_, reg_pwm_padding, pwm_duty_};
+      prdata <= {reg_pwm_padding, pwm_cycle_ticks_, reg_pwm_padding, pwm_duty_out_};
+    end
+  endtask
+
+  task read_pos_control_register();
+    localparam reg_pos_control_padding = {(data_width - 1) {1'b0}};
+    begin
+      prdata <= {reg_pos_control_padding, pos_ctl_enable_};
+    end
+  endtask
+
+  task read_target_pos_register();
+    begin
+      prdata <= target_poisition_;
     end
   endtask
 
@@ -366,6 +409,8 @@ module apb2_bldc_perpheral #(
         case (paddr)
           reg_control: write_control_register();
           reg_pwm_control: write_pwm_control_register();
+          reg_pos_control: write_pos_control_register();
+          reg_tgt_pos: write_target_pos_register();
           //default: pslverr <= 1;
         endcase
         pready <= 1;
@@ -386,6 +431,18 @@ module apb2_bldc_perpheral #(
   task write_pwm_control_register();
     begin
       pwm_duty_ <= pwdata[pwm_counter_width-1:0];
+    end
+  endtask
+
+  task write_pos_control_register();
+    begin
+      pos_ctl_enable_ <= pwdata[0];
+    end
+  endtask
+
+  task write_target_pos_register();
+    begin
+      target_poisition_ <= pwdata;
     end
   endtask
 
