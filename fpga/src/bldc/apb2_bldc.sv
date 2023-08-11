@@ -52,6 +52,8 @@ module apb2_bldc_perpheral #(
     parameter pwm_clk_freq_hz = 100_286_000,
     // PWM output frequency
     parameter pwm_freq_hz = 100_000,
+    // Period of RPM management in ms
+    parameter rpm_measurement_ms = 100,
     // Number of BLDC pole pairs
     parameter pole_pairs = 1
 ) (
@@ -187,7 +189,7 @@ module apb2_bldc_perpheral #(
   // Register addresses
   localparam reg_status = 8'h00 * 4;
   localparam reg_enc_counter = 8'h01 * 4;
-  localparam reg_enc_rot_duration = 8'h02 * 4;
+  localparam reg_enc_transitions_per_period = 8'h02 * 4;
   localparam reg_rpm = 8'h03 * 4;
   localparam reg_control = 8'h04 * 4;
   localparam reg_pwm_control = 8'h05 * 4;
@@ -209,7 +211,7 @@ module apb2_bldc_perpheral #(
   wire [pwm_counter_width - 1:0] pwm_cycle_ticks_;
 
   wire [counter_width - 1:0] enc_counter_;
-  wire [counter_width - 1:0] rot_duration_;
+  wire [counter_width - 1:0] transitions_per_period_;
   wire [counter_width - 1:0] rpm_;
   wire [2:0] sector_;
 
@@ -219,6 +221,7 @@ module apb2_bldc_perpheral #(
       .clk_freq_hz(clk_freq_hz),
       .pwm_clk_freq_hz(pwm_clk_freq_hz),
       .pwm_freq_hz(pwm_freq_hz),
+      .rpm_measurement_ms(rpm_measurement_ms),
       .pole_pairs(pole_pairs),
       .counter_width(counter_width),
       .pwm_counter_width(pwm_counter_width)
@@ -233,7 +236,7 @@ module apb2_bldc_perpheral #(
 
       .detected_dir(detected_dir),
       .encoder_counter(enc_counter_),
-      .rotation_duration(rot_duration_),
+      .transitions_per_period(transitions_per_period),
       .rpm(rpm_),
       .sector(sector_),
       .hall_error(hall_error_),
@@ -292,7 +295,7 @@ module apb2_bldc_perpheral #(
         case (paddr)
           reg_status: read_status_register();
           reg_enc_counter: read_enc_counter();
-          reg_enc_rot_duration: read_enc_rot_duration();
+          reg_enc_transitions_per_period: read_transitions_per_period();
           reg_rpm: read_rpm();
           reg_control: read_control_register();
           reg_pwm_control: read_pwm_control_register();
@@ -328,9 +331,9 @@ module apb2_bldc_perpheral #(
     end
   endtask
 
-  task read_enc_rot_duration();
+  task read_transitions_per_period();
     begin
-      prdata <= rot_duration_;
+      prdata <= transitions_per_period_;
     end
   endtask
 

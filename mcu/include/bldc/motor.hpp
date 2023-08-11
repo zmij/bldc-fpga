@@ -101,9 +101,9 @@ union status_registry {
 };
 static_assert(sizeof(status_registry) == sizeof(hal::raw_register));
 
-using enc_counter_register  = hal::raw_read_only_register_field<0, 32>;
-using rot_duration_register = hal::raw_read_only_register_field<0, 32>;
-using rpm_register          = hal::raw_read_only_register_field<0, 32>;
+using enc_counter_register            = hal::raw_read_only_register_field<0, 32>;
+using transitions_per_period_register = hal::raw_read_only_register_field<0, 32>;
+using rpm_register                    = hal::raw_read_only_register_field<0, 32>;
 
 union control_register {
     hal::bool_read_write_register_field<0>                     enable;
@@ -189,10 +189,15 @@ public:
         return enc_counter_;
     }
 
+    /**
+     * @brief Number of hall transitions per RPM measurement period
+     *
+     * @return std::uint32_t
+     */
     std::uint32_t
-    rotation_duration() volatile const
+    transitions_per_period() volatile const
     {
-        return rot_duration_;
+        return transitions_per_period_;
     }
 
     std::uint32_t
@@ -290,12 +295,12 @@ private:
     }
 
 private:
-    status_registry       status_;
-    enc_counter_register  enc_counter_;
-    rot_duration_register rot_duration_;
-    rpm_register          rpm_;
-    control_register      ctl_;
-    pwm_control_register  pwm_ctl_;
+    status_registry                 status_;
+    enc_counter_register            enc_counter_;
+    transitions_per_period_register transitions_per_period_;
+    rpm_register                    rpm_;
+    control_register                ctl_;
+    pwm_control_register            pwm_ctl_;
 };
 static_assert(sizeof(bldc_motor) == sizeof(hal::raw_register) * bldc_motor::register_count);
 
