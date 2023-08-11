@@ -1,4 +1,6 @@
 #include <armpp/fpm/fixed.hpp>
+#include <armpp/hal/addresses.hpp>
+#include <armpp/hal/nvic.hpp>
 #include <armpp/hal/scb.hpp>
 #include <armpp/hal/system.hpp>
 #include <armpp/hal/systick.hpp>
@@ -7,20 +9,146 @@
 #include <armpp/hal/uart_io.hpp>
 #include <bldc/motor.hpp>
 
+#include <array>
 #include <chrono>
+#include <string_view>
 
 using address      = armpp::hal::address;
 using uart_handle  = armpp::hal::uart::uart_handle;
 using timer_handle = armpp::hal::timer::timer_handle;
+using irqn_t       = armpp::hal::irqn_t;
 
 // TODO Move the addresses to vendor-specific headers
-constexpr address apb1periph_base = 0x40000000;
-constexpr address timer0_address  = apb1periph_base + 0x0000;
-constexpr address uart0_address   = apb1periph_base + 0x4000;
+constexpr address timer0_address = armpp::hal::timer0_address;
+constexpr address uart0_address  = armpp::hal::uart0_address;
 
-constexpr address apb2_periph_base = apb1periph_base + 0x02000;
+constexpr irqn_t uart0_irqn{0};
+constexpr irqn_t uart1_irqn{1};
 
 constexpr auto baud_rate = 230400;
+
+struct command {
+    using function_type
+        = std::function<void(bldc::bldc_motor_handle&, armpp::hal::uart::uart_handle&)>;
+    std::string_view name;
+    function_type    fn;
+
+    void
+    operator()(bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& device) const
+    {
+        fn(m, device);
+    }
+};
+
+std::array<command, 6> const&
+get_commands()
+{
+    static std::array<command, 6> const commands{{
+        {std::string_view{"stop"},
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << "Stop\r\n";
+             m->stop();
+         }},
+        {"brake",
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << "Brake\r\n";
+             m->brake();
+         }},
+        {"cw",
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << "Go CW\r\n";
+             m->run(bldc::rotation_direction_t::cw);
+         }},
+        {"ccw",
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << "Go CCW\r\n";
+             m->run(bldc::rotation_direction_t::ccw);
+         }},
+        {"up",
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << "Accelerate\r\n";
+             auto pwm = m->pwm_duty() + 50;
+             if (pwm > m->pwm_cycle() / 2) {
+                 pwm = m->pwm_cycle() / 2;
+             }
+             uart << "New PWM " << pwm << "\r\n";
+             m->set_pwm_duty(pwm);
+         }},
+        {"down",
+         [](bldc::bldc_motor_handle& m, armpp::hal::uart::uart_handle& uart) {
+             uart << "Deccelerate\r\n";
+             auto pwm = m->pwm_duty();
+             if (pwm >= 50) {
+                 pwm = pwm - 50;
+             }
+             uart << "New PWM " << pwm << "\r\n";
+             m->set_pwm_duty(pwm);
+         }},
+    }};
+    return commands;
+}
+
+class command_parser {
+public:
+    static constexpr std::size_t buffer_size = 16;
+
+    command_parser() noexcept = default;
+
+    void
+    operator()(armpp::hal::uart::uart_handle& device, char c)
+    {
+        switch (c) {
+        case '\r':
+            return;
+        case '\n': {
+            command_done(device);
+            break;
+        }
+        default: {
+            buffer_[current_++] = c;
+        }
+        }
+
+        if (current_ == buffer_size - 2) {
+            command_done(device);
+        }
+    }
+
+private:
+    void
+    command_done(armpp::hal::uart::uart_handle& device)
+    {
+        using armpp::hal::uart::dec_out;
+        buffer_[current_] = 0;
+        std::string_view cmd_in{buffer_.data(), current_};
+        current_ = 0;
+
+        device << "Received command " << cmd_in << "\r\n";
+
+        for (auto const& cmd : get_commands()) {
+            if (cmd_in == cmd.name) {
+                cmd(motor_, device);
+                return;
+            }
+        }
+        // TODO try parse number
+        // std::uint32_t pwm = std::atoi(cmd_in.data());
+        // if (pwm >= 0) {
+        //     if (pwm > motor_->pwm_cycle() / 2) {
+        //         pwm = motor_->pwm_cycle() / 2;
+        //     }
+        //     device << "Set pwm to " << pwm << "\r\n";
+        //     motor_->set_pwm_duty(pwm);
+        //     return;
+        // }
+        device << "Unknown command `" << cmd_in << "`\r\n";
+    }
+
+private:
+    bldc::bldc_motor_handle       motor_;
+    std::array<char, buffer_size> buffer_;
+    std::size_t                   current_;
+};
 
 extern "C" int
 main()
@@ -31,12 +159,17 @@ main()
     using armpp::hal::uart::width_out;
     using sysclock = armpp::hal::system::clock;
 
-    armpp::hal::scb::scb_handle scb_handle;
+    armpp::hal::scb::scb_handle   scb_handle;
+    armpp::hal::nvic::nvic_handle nvic_handle;
+    nvic_handle->enable_irq(uart0_irqn);
 
     auto const& clock           = armpp::hal::system::clock::instance();
     auto const  ticks_per_milli = clock.ticks_per_millisecond();
 
-    uart_handle  uart0{uart0_address, {.enable{.tx = true}, .baud_rate = baud_rate}};
+    uart_handle uart0{
+        uart0_address,
+        {.enable{.tx = true, .rx = true}, .enable_interrupt{.rx = true}, .baud_rate = baud_rate}};
+
     timer_handle timer0{timer0_address, {.enable = false, .interrupt_enable = false}};
 
     bldc::bldc_motor_handle motor;
@@ -51,10 +184,13 @@ main()
           << "PWM cycle length " << width_out(0) << motor->pwm_cycle() << "\r\n";
 
     motor->set_invert_phases(true);
-    motor->set_direction(bldc::rotation_direction_t::cw);
+
+    command_parser cp;
+
+    uart0->set_rx_handler(cp);
+
     auto cycle = motor->pwm_cycle();
     motor->set_pwm_duty(cycle / 3);
-    motor->enable();
 
     std::uint32_t              hall_values = 0;
     bldc::rotation_direction_t dir         = bldc::rotation_direction_t::none;
@@ -80,7 +216,8 @@ main()
                   << " cnt: " << width_out(10) << motor->enc_counter() << " rpm: " << width_out(5)
                   << motor->rpm() << " pwm: " << motor->pwm_duty() << "/" << width_out(0) << cycle
                   << (motor->driver_fault() ? " FAULT" : "")
-                  << (motor->overcurrent() ? " OVER" : "") << "\r\n";
+                  << (motor->overcurrent() ? " OVER" : "");
+            uart0 << "\r\n";
         }
     }
 }

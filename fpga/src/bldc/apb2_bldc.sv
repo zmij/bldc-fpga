@@ -374,7 +374,8 @@ module apb2_bldc_perpheral #(
   task write_control_register();
     begin
       enable_ = pwdata[0];
-      dir_ = rotation_direction_t'(pwdata[2:1]);
+      if (enable_) dir_ = rotation_direction_t'(pwdata[2:1]);
+      else dir_ = DIR_NONE;
       invert_phases_ = pwdata[3];
     end
   endtask
