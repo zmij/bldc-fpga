@@ -109,6 +109,7 @@ union control_register {
     hal::bool_read_write_register_field<0>                     enable;
     hal::read_write_register_field<rotation_direction_t, 1, 2> dir;
     hal::bool_read_write_register_field<3>                     invert_phases;
+    volatile hal::raw_register                                 raw;
 };
 static_assert(sizeof(control_register) == sizeof(hal::raw_register));
 
@@ -209,25 +210,23 @@ public:
     void
     enable()
     {
-        ctl_.enable = true;
+        control_register new_val{.raw = ctl_.raw};
+        new_val.enable = true;
+        ctl_.raw       = new_val.raw;
     }
 
     void
     disable()
     {
-        ctl_.enable = false;
+        control_register new_val{.raw = ctl_.raw};
+        new_val.enable = false;
+        ctl_.raw       = new_val.raw;
     }
 
     rotation_direction_t
     direction() volatile const
     {
         return ctl_.dir;
-    }
-
-    void
-    set_direction(rotation_direction_t dir)
-    {
-        ctl_.dir = dir;
     }
 
     bool
@@ -258,6 +257,36 @@ public:
     set_pwm_duty(std::uint32_t duty)
     {
         pwm_ctl_.duty = duty;
+    }
+
+    void
+    run(rotation_direction_t dir)
+    {
+        set_control(dir, true);
+    }
+
+    void
+    brake()
+    {
+        set_control(rotation_direction_t::brake, true);
+    }
+
+    void
+    stop()
+    {
+        set_control(rotation_direction_t::none, false);
+    }
+
+private:
+    void
+    set_control(rotation_direction_t dir, bool enabled)
+    {
+        if (enabled)
+            ctl_.enable = false;
+        control_register new_val{.raw = ctl_.raw};
+        new_val.dir    = dir;
+        new_val.enable = enabled;
+        ctl_.raw       = new_val.raw;
     }
 
 private:

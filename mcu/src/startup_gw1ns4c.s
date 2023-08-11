@@ -91,9 +91,9 @@ __isr_vector:
     .long   system_tick                 // SysTick Handler
 
     //External Interrupts
-    .long   UART0_Handler               // 16+ 0: UART 0 RX and TX Handler
+    .long   uart0_handler               // 16+ 0: UART 0 RX and TX Handler
     .long   USER_INT0_Handler           // 16+ 1: Interrupt handler 0 to user extension
-    .long   UART1_Handler               // 16+ 2: UART 1 RX and TX Handler
+    .long   uart1_handler               // 16+ 2: UART 1 RX and TX Handler
     .long   USER_INT1_Handler           // 16+ 3: Interrupt handler 1 to user extension
     .long   USER_INT2_Handler           // 16+ 4: Interrupt handler 2 to user extension
     .long   RTC_Handler                 // 16+ 5: RTC Handler
@@ -103,7 +103,7 @@ __isr_vector:
     .long   TIMER1_Handler              // 16+ 9: TIMER 1 handler
     .long   0                           // 16+10: Reserved
     .long   I2C_Handler                 // 16+11: I2C handler
-    .long   UARTOVF_Handler             // 16+12: UART 0,1 Overflow Handler
+    .long   uart_ovr_handler            // 16+12: UART 0,1 Overflow Handler
     .long   USER_INT4_Handler           // 16+13: Interrupt handler 4 to user extension
     .long   USER_INT5_Handler           // 16+14: Interrupt handler 5 to user extension
     .long   Spare15_Handler             // 16+15: Not Used
