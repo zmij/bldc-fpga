@@ -112,7 +112,7 @@ using transitions_per_period_register = hal::raw_read_only_register_field<0, 32>
 using rpm_register                    = hal::raw_read_only_register_field<0, 32>;
 
 union control_register {
-    hal::bool_read_write_register_field<0>                     enable;
+    hal::read_write_register_field<enabled_t, 0, 1>            enable;
     hal::read_write_register_field<rotation_direction_t, 1, 2> dir;
     hal::bool_read_write_register_field<3>                     invert_phases;
     volatile hal::raw_register                                 raw;
@@ -234,23 +234,25 @@ public:
     bool
     enabled() volatile const
     {
-        return ctl_.enable;
+        return ctl_.enable == enabled_t::enabled;
     }
 
     void
     enable()
     {
-        control_register new_val{.raw = ctl_.raw};
-        new_val.enable = true;
-        ctl_.raw       = new_val.raw;
+        ctl_.enable = enabled_t::enabled;
     }
 
     void
     disable()
     {
-        control_register new_val{.raw = ctl_.raw};
-        new_val.enable = false;
-        ctl_.raw       = new_val.raw;
+        ctl_.enable = enabled_t::disabled;
+    }
+
+    bool
+    pos_clt_enabled() volatile const
+    {
+        return pos_ctl_.enable == enabled_t::enabled;
     }
 
     rotation_direction_t
@@ -292,19 +294,19 @@ public:
     void
     run(rotation_direction_t dir)
     {
-        set_control(dir, true);
+        set_control(dir, enabled_t::enabled);
     }
 
     void
     brake()
     {
-        set_control(rotation_direction_t::brake, true);
+        set_control(rotation_direction_t::brake, enabled_t::enabled);
     }
 
     void
     stop()
     {
-        set_control(rotation_direction_t::none, false);
+        set_control(rotation_direction_t::none, enabled_t::disabled);
     }
 
     void
@@ -312,7 +314,7 @@ public:
     {
         target_         = pos;
         pos_ctl_.enable = enabled_t::enabled;
-        ctl_.enable     = true;
+        // ctl_.enable     = true;
     }
 
     void
@@ -328,11 +330,9 @@ public:
 
 private:
     void
-    set_control(rotation_direction_t dir, bool enabled)
+    set_control(rotation_direction_t dir, enabled_t enabled)
     {
         pos_ctl_.enable = enabled_t::disabled;
-        if (enabled)
-            ctl_.enable = false;
         control_register new_val{.raw = ctl_.raw};
         new_val.dir    = dir;
         new_val.enable = enabled;

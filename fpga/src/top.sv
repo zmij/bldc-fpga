@@ -25,7 +25,7 @@ module top (
   localparam pwm_clk_freq_hz = 100_286_000;
   localparam pwm_freq_hz = 25_000;
   localparam rpm_measurement_ms = 100;
-  localparam pole_pairs = 11;
+  localparam pole_pairs = 10;
 
   wire clk_54mhz_;
 
