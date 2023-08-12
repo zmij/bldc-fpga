@@ -50,6 +50,9 @@ It provides an interface to control and monitor the BLDC motor.
  *  [0:0] enable         R/W
  * target pos           0x1c
  *  [31:0] pos           R/W
+ * speed control        0x20
+ *  [0:0] enable         R/W
+ *  [12:1] target rpm    R/W
  */
 module apb2_bldc_perpheral #(
     // Data width for APB2 bus
@@ -194,8 +197,8 @@ module apb2_bldc_perpheral #(
     /** @} */  // end of Reset_Signal
 );
   localparam counter_width = 32;
+  localparam rpm_counter_width = 12;
   localparam pwm_counter_width = $clog2(pwm_clk_freq_hz / pwm_freq_hz) + 1;
-  localparam rmp_counter_width = 12;
 
   // Register addresses
   localparam reg_status = 8'h00 * 4;
@@ -206,10 +209,11 @@ module apb2_bldc_perpheral #(
   localparam reg_pwm_control = 8'h05 * 4;
   localparam reg_pos_control = 8'h06 * 4;
   localparam reg_tgt_pos = 8'h07 * 4;
+  localparam reg_speed_control = 8'h08 * 4;
 
-  typedef logic [pwm_counter_width - 1:0] pwm_counter_t;
-  typedef logic [counter_width - 1:0] enc_counter_t;
-  typedef logic [rmp_counter_width - 1:0] rmp_counter_t;
+  typedef logic [pwm_counter_width - 1:0] pwm_t;
+  typedef logic [counter_width - 1:0] position_t;
+  typedef logic [rpm_counter_width - 1:0] rpm_t;
 
   logic [4:0] pole_pairs_;
   assign pole_pairs_ = pole_pairs;
@@ -227,24 +231,28 @@ module apb2_bldc_perpheral #(
   logic hall_error_;
   logic invert_phases_;
 
-  pwm_counter_t pwm_cycle_ticks_;
+  pwm_t pwm_cycle_ticks_;
 
   rotation_direction_t manual_dir_;
-  pwm_counter_t user_pwm_duty_;
+  pwm_t user_pwm_duty_;
 
-  rotation_direction_t pos_ctl_dir_;
-  pwm_counter_t pos_ctl_pwm_dury_;
 
-  enc_counter_t enc_position_;
-  enc_counter_t transitions_per_period_;
-  enc_counter_t rpm_;
+  position_t enc_position_;
+  position_t transitions_per_period_;
+  rpm_t rpm_ms_;
+  rpm_t rpm_1s_;
 
   logic pos_ctl_enable_;
-  enc_counter_t target_position_;
+  position_t target_position_;
+  rotation_direction_t pos_ctl_dir_;
   logic pos_driver_enable_;
+  pwm_t pos_ctl_pwm_duty_;
 
-  logic speed_ctl_enable_;
-  rmp_counter_t target_rpm_;
+  logic user_speed_ctl_enable_;
+  rpm_t user_target_rpm_;
+  rpm_t target_rpm_;
+  logic speed_ctl_drv_enable_;
+  pwm_t speed_pwm_duty_;
 
   wire [2:0] sector_;
 
@@ -253,7 +261,6 @@ module apb2_bldc_perpheral #(
   //--------------------------------------------------------------------------
   // Position control
   //--------------------------------------------------------------------------
-
   position_control #(
       .clk_freq_hz(clk_freq_hz),
       .counter_width(counter_width),
@@ -273,9 +280,43 @@ module apb2_bldc_perpheral #(
       .dir_in(manual_dir_),
       .driver_enable_in(manual_enable_),
 
-      .pwm_duty_out(pos_ctl_pwm_dury_),
+      .pwm_duty_out(pos_ctl_pwm_duty_),
       .dir_out(pos_ctl_dir_),
       .driver_enable_out(pos_driver_enable_),
+
+      .reset_n(preset_n)
+  );
+
+  assign target_rpm_ = user_target_rpm_;
+
+  //--------------------------------------------------------------------------
+  // Speed control
+  //--------------------------------------------------------------------------
+  speed_control #(
+      .clk_freq_hz(clk_freq_hz),
+      .counter_width(counter_width),
+      .pwm_clk_freq_hz(pwm_clk_freq_hz),
+      .pwm_freq_hz(pwm_freq_hz),
+      .pwm_counter_width(pwm_counter_width),
+      .pole_pairs(pole_pairs),
+      .rpm_counter_width(rpm_counter_width),
+      .rpm_measurement_ms(rpm_measurement_ms)
+  ) speed_ctl_ (
+      .sys_clk(pclk),
+
+      .enable(user_speed_ctl_enable_),
+
+      .rpm(rpm_ms_),
+      .current_direction(detected_dir),
+
+      .target_rpm(user_target_rpm_),
+      .target_direction(pos_ctl_dir_),
+
+      .pwm_duty_in(pos_ctl_pwm_duty_),
+      .driver_enable_in(pos_driver_enable_),
+
+      .pwm_duty_out(speed_pwm_duty_),
+      .driver_enable_out(speed_ctl_drv_enable_),
 
       .reset_n(preset_n)
   );
@@ -290,6 +331,7 @@ module apb2_bldc_perpheral #(
       .rpm_measurement_ms(rpm_measurement_ms),
       .pole_pairs(pole_pairs),
       .counter_width(counter_width),
+      .rpm_counter_width(rpm_counter_width),
       .pwm_counter_width(pwm_counter_width)
   ) driver_ (
       .sys_clk(pclk),
@@ -303,7 +345,8 @@ module apb2_bldc_perpheral #(
       .detected_dir(detected_dir),
       .encoder_counter(enc_position_),
       .transitions_per_period(transitions_per_period_),
-      .rpm(rpm_),
+      .rpm(rpm_ms_),
+      .rpm_1s(rpm_1s_),
       .sector(sector_),
       .hall_error(hall_error_),
 
@@ -311,9 +354,9 @@ module apb2_bldc_perpheral #(
       .pwm_out(pwm_out),
       .gate_enable(gate_enable),
 
-      .enable(pos_driver_enable_),
+      .enable(speed_ctl_drv_enable_),
       .direction(pos_ctl_dir_),
-      .pwm_duty(pos_ctl_pwm_dury_),
+      .pwm_duty(speed_pwm_duty_),
 
       .pwm_cycle_ticks(pwm_cycle_ticks_),
       .driver_state(driver_state_),
@@ -334,6 +377,13 @@ module apb2_bldc_perpheral #(
       manual_enable_ <= 0;
       manual_dir_ <= DIR_NONE;
       user_pwm_duty_ <= 0;
+      pos_ctl_enable_ <= 0;
+      user_speed_ctl_enable_ <= 0;
+
+      target_position_ <= 0;
+      user_target_rpm_ <= 0;
+
+      target_rpm_ <= 0;
     end
   endtask
 
@@ -367,6 +417,7 @@ module apb2_bldc_perpheral #(
           reg_pwm_control: read_pwm_control_register();
           reg_pos_control: read_pos_control_register();
           reg_tgt_pos: read_target_pos_register();
+          reg_speed_control: read_speed_control_register();
           // Write requested address for now
           default: prdata[addr_width-1:0] <= paddr;
         endcase
@@ -407,8 +458,9 @@ module apb2_bldc_perpheral #(
   endtask
 
   task read_rpm();
+    localparam reg_rpm_padding = {(data_width / 2 - rpm_counter_width) {1'b0}};
     begin
-      prdata <= rpm_;
+      prdata <= {reg_rpm_padding, rpm_1s_, reg_rpm_padding, rpm_ms_};
     end
   endtask
 
@@ -422,7 +474,7 @@ module apb2_bldc_perpheral #(
   task read_pwm_control_register();
     localparam reg_pwm_padding = {(16 - pwm_counter_width) {1'b0}};
     begin
-      prdata <= {reg_pwm_padding, pwm_cycle_ticks_, reg_pwm_padding, pos_ctl_pwm_dury_};
+      prdata <= {reg_pwm_padding, pwm_cycle_ticks_, reg_pwm_padding, pos_ctl_pwm_duty_};
     end
   endtask
 
@@ -436,6 +488,13 @@ module apb2_bldc_perpheral #(
   task read_target_pos_register();
     begin
       prdata <= target_position_;
+    end
+  endtask
+
+  task read_speed_control_register();
+    localparam reg_speed_control_padding = {(data_width - rpm_counter_width - 1) {1'b0}};
+    begin
+      prdata <= {reg_speed_control_padding, target_rpm_, user_speed_ctl_enable_};
     end
   endtask
 
@@ -482,6 +541,13 @@ module apb2_bldc_perpheral #(
   task write_target_pos_register();
     begin
       target_position_ <= pwdata;
+    end
+  endtask
+
+  task write_speed_control_register();
+    begin
+      user_speed_ctl_enable_ <= pwdata[0];
+      user_target_rpm_ <= pwdata[rpm_counter_width:1];
     end
   endtask
 

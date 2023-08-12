@@ -243,7 +243,7 @@ main()
                   << " dir: " << motor->direction() << " detected: " << motor->detected_rotation()
                   << " cnt: " << width_out(10) << motor->enc_counter()    //
                   << " tgt: " << motor->target_position()                 //
-                  << " rpm: " << width_out(5) << motor->rpm()             //
+                  << " rpm: " << width_out(4) << motor->rpm()             //
                   << " pwm: " << motor->pwm_duty()                        //
                   << "/" << width_out(0) << cycle                         //
                   << (motor->pos_clt_enabled() ? " POS" : "")

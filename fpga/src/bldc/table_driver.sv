@@ -17,6 +17,7 @@ module table_bldc_driver #(
     parameter rpm_measurement_ms = 100,  // Period of RPM management in ms
     parameter pole_pairs = 1,
     parameter counter_width = 32,
+    parameter rpm_counter_width = 12,
     parameter pwm_counter_width = $clog2(pwm_clk_freq_hz / pwm_freq_hz) + 1
 ) (
     input sys_clk,
@@ -33,7 +34,8 @@ module table_bldc_driver #(
     output rotation_direction_t detected_dir,
     output logic [counter_width - 1:0] encoder_counter,
     output logic [counter_width - 1:0] transitions_per_period,
-    output logic [counter_width - 1:0] rpm,
+    output logic [rpm_counter_width - 1:0] rpm,
+    output logic [rpm_counter_width - 1:0] rpm_1s,
     output logic [2:0] sector,
     output hall_error,
     //@}
@@ -93,14 +95,17 @@ module table_bldc_driver #(
       .rpm_measurement_ms(rpm_measurement_ms),
       .counter_width(counter_width)
   ) encoder_ (
-      .clk(sys_clk),
-      .reset_n(reset_n),
+      .sys_clk(sys_clk),
+
       .hall_values(hall_values_debounced_),
       .overall_counter(encoder_counter),
       .rotation_direction(detected_dir),
       .transitions_per_period(transitions_per_period),
       .rpm(rpm),
-      .sector(sector)
+      .rpm_1s(rpm_1s),
+      .sector(sector),
+
+      .reset_n(reset_n)
   );
 
 

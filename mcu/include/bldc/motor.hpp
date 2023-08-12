@@ -109,7 +109,12 @@ static_assert(sizeof(status_registry) == sizeof(hal::raw_register));
 
 using enc_counter_register            = hal::raw_read_only_register_field<0, 32>;
 using transitions_per_period_register = hal::raw_read_only_register_field<0, 32>;
-using rpm_register                    = hal::raw_read_only_register_field<0, 32>;
+
+union rpm_register {
+    hal::raw_read_only_register_field<0, 12>  rmp_ms;
+    hal::raw_read_only_register_field<16, 12> rmp_1s;
+};
+static_assert(sizeof(rpm_register) == sizeof(hal::raw_register));
 
 union control_register {
     hal::read_write_register_field<enabled_t, 0, 1>            enable;
@@ -225,10 +230,28 @@ public:
         return transitions_per_period_;
     }
 
+    /**
+     * @brief RPM measured every 100ms
+     *
+     * @return std::uint32_t
+     */
     std::uint32_t
     rpm() volatile const
     {
-        return rpm_;
+        return rpm_.rmp_ms;
+    }
+
+    /**
+     * @brief RPM measured every 1 second
+     *
+     * More accurate number than rpm, but updates less frequently
+     *
+     * @return std::uint32_t
+     */
+    std::uint32_t
+    rpm_1s() volatile const
+    {
+        return rpm_.rmp_1s;
     }
 
     bool
