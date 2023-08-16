@@ -33,10 +33,10 @@ module table_bldc_driver #(
     /** @name Encoder interface */
     output rotation_direction_t detected_dir,
     output logic [counter_width - 1:0] encoder_counter,
-    output logic [counter_width - 1:0] transitions_per_period,
-    output logic [rpm_counter_width - 1:0] rpm,
-    output logic [rpm_counter_width - 1:0] rpm_1s,
     output logic [2:0] sector,
+    output logic [rpm_counter_width - 1:0] rpm,
+    output logic rpm_valid,
+    output logic rpm_updated,
     output hall_error,
     //@}
     //@{
@@ -98,12 +98,13 @@ module table_bldc_driver #(
       .sys_clk(sys_clk),
 
       .hall_values(hall_values_debounced_),
+
       .overall_counter(encoder_counter),
       .rotation_direction(detected_dir),
-      .transitions_per_period(transitions_per_period),
-      .rpm(rpm),
-      .rpm_1s(rpm_1s),
       .sector(sector),
+      .rpm(rpm),
+      .rpm_valid(rpm_valid),
+      .rpm_updated(rpm_updated),
 
       .reset_n(reset_n)
   );
