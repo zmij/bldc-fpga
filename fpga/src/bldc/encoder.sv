@@ -8,81 +8,8 @@
 `define __BLDC_ENCODER_SV__
 
 `include "bldc/types.sv"
+`include "bldc/window_counter.sv"
 
-module rpm_counter #(
-    parameter clk_freq_hz = 27_000_000,  // The frequency of the clock in Hertz
-    parameter counter_width = 32,  // The width of the internal counter
-    parameter rpm_counter_width = 32,  // The width of the RPM counter
-    parameter pole_pairs = 1,  // The number of pole pairs in the motor
-    parameter rpm_measurement_ms = 100  // Period of RPM management in ms
-) (
-    input logic sys_clk,  // Clock signal
-
-    input logic count,  // Count this tick
-    input logic direction_changed,  // Direction has changed, reset counters
-
-    output logic [counter_width - 1:0] transition_count,  // Hall transitions per measurement period
-    output logic [rpm_counter_width-1:0] rpm,  // Revolutions per minute, measured per rpm_measurement_ms period
-
-    input logic reset_n  // Reset signal
-);
-  localparam rpm_period_ticks = clk_freq_hz / 1000 * rpm_measurement_ms;
-  localparam rpm_measurements_per_minute = 60 * 1000 / rpm_measurement_ms;
-
-  typedef logic [counter_width - 1:0] counter_t;
-  typedef logic [rpm_counter_width - 1:0] rpm_t;
-
-  counter_t rpm_period_counter_;
-  counter_t transition_counter_ [0:1];
-
-  function rpm_t truncate_rpm(input counter_t val);
-    begin
-      return val[rpm_counter_width-1:0];
-    end
-  endfunction
-
-  task automatic reset();
-    begin
-      rpm_period_counter_ <= 0;
-      transition_counter_[1] <= 0;
-      transition_counter_[0] <= 0;
-    end
-  endtask
-
-  task automatic update_rpm();
-    begin
-      if (rpm_period_counter_ == rpm_period_ticks - 1) begin
-        rpm_period_counter_ <= 0;
-        transition_counter_[1] <= transition_counter_[0];
-        transition_counter_[0] <= 0;
-      end else begin
-        if (direction_changed) begin
-          rpm_period_counter_ <= 0;
-          transition_counter_[1] <= 0;
-          transition_counter_[0] <= 0;
-        end else begin
-          rpm_period_counter_ <= rpm_period_counter_ + 1;
-          if (count) begin
-            transition_counter_[0] <= transition_counter_[0] + 1;
-          end
-        end
-      end
-    end
-  endtask
-
-  always_ff @(posedge sys_clk or negedge reset_n) begin
-    if (!reset_n) begin
-      reset();
-    end else begin
-      update_rpm();
-    end
-  end
-
-  assign transition_count = transition_counter_[1];
-  assign rpm = truncate_rpm(
-      transition_counter_[1] * rpm_measurements_per_minute / (6 * pole_pairs)
-  );
-endmodule
 
 //----------------------------------------------------------------------------
 // Encoder for BLDC motor
@@ -99,18 +26,21 @@ module three_phase_encoder #(
     parameter counter_width = 32,  // The width of the internal counter
     parameter rpm_counter_width = 12,  // The width of RPM counter
     parameter pole_pairs = 1,  // The number of pole pairs in the motor
+    parameter max_rpm_value = 4000,  // Maximum measured RPM value
+    parameter rpm_sample_time_ms = 10,  // RPM sample time
     parameter rpm_measurement_ms = 100,  // Period of RPM management in ms
     parameter idle_ms = 1000  // Time to exceed for IDLE state in ms
 ) (
     input logic sys_clk,  // Clock signal
 
     input hall_states_t hall_values,  // Hall sensor values
-    output reg [counter_width-1:0] overall_counter, // Overall counter that increments or decrements based on rotation
-    output reg [counter_width-1:0] transitions_per_period,  // Count of hall transitions per RPM measurement period
-    output [rpm_counter_width-1:0] rpm,  // Revolutions per minute, measured per rpm_measurement_ms period
-    output [rpm_counter_width-1:0] rpm_1s,  // Revolutions per minute, measured per 1 second period
+
+    output logic [counter_width-1:0] overall_counter, // Overall counter that increments or decrements based on rotation
     output rotation_direction_t rotation_direction,  // Rotation direction
     output logic [2:0] sector,  // Current sector
+    output logic [rpm_counter_width-1:0] rpm,  // Revolutions per minute, sampled by window_counter
+    output logic rpm_valid,  // There were enough samples
+    output logic rpm_updated,  // RPM value updated
 
     input logic reset_n  // Reset signal
 );
@@ -132,33 +62,20 @@ module three_phase_encoder #(
   logic direction_changed_;  // Flag to indicate change in direction
   logic idle_;
 
-  rpm_counter #(
-      .clk_freq_hz(clk_freq_hz),
-      .counter_width(counter_width),
-      .rpm_counter_width(rpm_counter_width),
-      .pole_pairs(pole_pairs),
-      .rpm_measurement_ms(rpm_measurement_ms)
-  ) rpm_ms_ (
-      .sys_clk(sys_clk),
-      .count(~idle_),
-      .direction_changed(direction_changed_),
-      .transition_count(transitions_per_period),
-      .rpm(rpm),
-      .reset_n(reset_n)
-  );
+  logic [rpm_counter_width-1:0] sampled_rpm_;
+  assign rpm = sampled_rpm_ * 60 / (6 * pole_pairs);
 
-  rpm_counter #(
+  window_counter #(
       .clk_freq_hz(clk_freq_hz),
-      .counter_width(counter_width),
-      .rpm_counter_width(rpm_counter_width),
-      .pole_pairs(pole_pairs),
-      .rpm_measurement_ms(1000)
-  ) rpm_1s_ (
+      .max_possible_value(max_rpm_value),
+      .sample_time_ms(rpm_sample_time_ms)
+  ) rpm_ (
       .sys_clk(sys_clk),
-      .count(~idle_),
-      .direction_changed(direction_changed_),
-      .rpm(rpm_1s),
-      .reset_n(reset_n)
+      .enable (~idle_),
+      .counter(sampled_rpm_),
+      .valid  (rpm_valid),
+      .updated(rpm_updated),
+      .reset_n(reset_n | ~direction_changed_)
   );
 
   /**
