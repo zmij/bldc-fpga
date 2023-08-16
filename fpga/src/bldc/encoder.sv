@@ -8,6 +8,8 @@
 `define __BLDC_ENCODER_SV__
 
 `include "bldc/types.sv"
+`include "bldc/window_counter.sv"
+
 
 //----------------------------------------------------------------------------
 // Encoder for BLDC motor
@@ -22,18 +24,25 @@
 module three_phase_encoder #(
     parameter clk_freq_hz = 27_000_000,  // The frequency of the clock in Hertz
     parameter counter_width = 32,  // The width of the internal counter
+    parameter rpm_counter_width = 12,  // The width of RPM counter
     parameter pole_pairs = 1,  // The number of pole pairs in the motor
+    parameter max_rpm_value = 4000,  // Maximum measured RPM value
+    parameter rpm_sample_time_ms = 10,  // RPM sample time
     parameter rpm_measurement_ms = 100,  // Period of RPM management in ms
     parameter idle_ms = 1000  // Time to exceed for IDLE state in ms
 ) (
-    input logic clk,  // Clock signal
-    input logic reset_n,  // Reset signal
+    input logic sys_clk,  // Clock signal
+
     input hall_states_t hall_values,  // Hall sensor values
-    output reg [counter_width-1:0] overall_counter, // Overall counter that increments or decrements based on rotation
-    output reg [counter_width-1:0] transitions_per_period,  // Count of hall transitions per RPM measurement period
-    output [counter_width-1:0] rpm,  // Revolutions per minute
+
+    output logic [counter_width-1:0] overall_counter, // Overall counter that increments or decrements based on rotation
     output rotation_direction_t rotation_direction,  // Rotation direction
-    output logic [2:0] sector  // Current sector
+    output logic [2:0] sector,  // Current sector
+    output logic [rpm_counter_width-1:0] rpm,  // Revolutions per minute, sampled by window_counter
+    output logic rpm_valid,  // There were enough samples
+    output logic rpm_updated,  // RPM value updated
+
+    input logic reset_n  // Reset signal
 );
   localparam cycle_size = 6;
   localparam ticks_per_minute = clk_freq_hz * 60;
@@ -52,6 +61,22 @@ module three_phase_encoder #(
 
   logic direction_changed_;  // Flag to indicate change in direction
   logic idle_;
+
+  logic [rpm_counter_width-1:0] sampled_rpm_;
+  assign rpm = sampled_rpm_ * 60 / (6 * pole_pairs);
+
+  window_counter #(
+      .clk_freq_hz(clk_freq_hz),
+      .max_possible_value(max_rpm_value),
+      .sample_time_ms(rpm_sample_time_ms)
+  ) rpm_ (
+      .sys_clk(sys_clk),
+      .enable (~idle_),
+      .counter(sampled_rpm_),
+      .valid  (rpm_valid),
+      .updated(rpm_updated),
+      .reset_n(reset_n | ~direction_changed_)
+  );
 
   /**
    * @brief Task to update the rotation information based on the hall_values.
@@ -75,27 +100,6 @@ module three_phase_encoder #(
         idle_ <= 1;
         if (idle_counter_ > idle_ticks) begin
           rotation_direction <= DIR_NONE;
-        end
-      end
-    end
-  endtask
-
-  task update_rpm();
-    begin
-      if (rpm_period_counter_ == rpm_period_ticks - 1) begin
-        rpm_period_counter_ <= 0;
-        rpm_transition_counter_[1] <= rpm_transition_counter_[0];
-        rpm_transition_counter_[0] <= 0;
-      end else begin
-        if (direction_changed_) begin
-          rpm_period_counter_ <= 0;
-          rpm_transition_counter_[0] <= 0;
-          rpm_transition_counter_[1] <= 0;
-        end else begin
-          rpm_period_counter_ <= rpm_period_counter_ + 1;
-          if (!idle_) begin
-            rpm_transition_counter_[0] <= rpm_transition_counter_[0] + 1;
-          end
         end
       end
     end
@@ -133,7 +137,7 @@ module three_phase_encoder #(
    * @brief Always block to update the rotation when the clock edge occurs or reset signal changes.
    * @details This always block is sensitive to the positive edge of the clock signal and negative edge of the reset signal.
    */
-  always_ff @(posedge clk or negedge reset_n) begin
+  always_ff @(posedge sys_clk or negedge reset_n) begin
     if (!reset_n) begin
       idle_ <= 1;
       rotation_direction <= DIR_NONE;
@@ -142,20 +146,10 @@ module three_phase_encoder #(
     end
   end
 
-  always_ff @(posedge clk or negedge reset_n) begin
-    if (!reset_n) begin
-      rpm_period_counter_ <= 0;
-      rpm_transition_counter_[0] <= 0;
-      rpm_transition_counter_[1] <= 0;
-    end else begin
-      update_rpm();
-    end
-  end
-
   /**
    * @brief Always block to update the encoder counter
    */
-  always_ff @(posedge clk or negedge reset_n) begin
+  always_ff @(posedge sys_clk or negedge reset_n) begin
     if (!reset_n) begin
       overall_counter <= 0;
     end else begin
@@ -166,7 +160,7 @@ module three_phase_encoder #(
   /**
    * @brief Always block to update the idle counter
    */
-  always_ff @(posedge clk or negedge reset_n) begin
+  always_ff @(posedge sys_clk or negedge reset_n) begin
     if (!reset_n) begin
       idle_counter_ <= 0;
     end else begin
@@ -178,7 +172,7 @@ module three_phase_encoder #(
    * @brief Always block to update the current sector whenever the clock edge occurs.
    * @details This always block is sensitive to the positive edge of the clock signal.
    */
-  always @(posedge clk) begin
+  always @(posedge sys_clk) begin
     if (!reset_n) begin
       sector <= 3'b111;
     end else begin
@@ -193,9 +187,6 @@ module three_phase_encoder #(
       endcase
     end
   end
-
-  assign transitions_per_period = rpm_transition_counter_[1];
-  assign rpm = rpm_transition_counter_[1] * rpm_measurements_per_minute / (6 * pole_pairs);
 
 endmodule
 

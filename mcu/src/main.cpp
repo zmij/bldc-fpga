@@ -208,7 +208,6 @@ main()
           << "Ticks per milli: " << ticks_per_milli << "\r\n"
           << "Frequency period duration: "
           << clock.system_frequency().period_duration<armpp::chrono::nanoseconds>() << "\r\n"
-          << "Motor device address " << motor.operator->() << "\r\n"
           << "Pole pairs " << width_out(0) << motor->pole_pairs() << "\r\n"
           << "PWM cycle length " << width_out(0) << motor->pwm_cycle() << "\r\n";
 
@@ -244,8 +243,11 @@ main()
                   << " dir: " << motor->direction() << " detected: " << motor->detected_rotation()
                   << " cnt: " << width_out(10) << motor->enc_counter()    //
                   << " tgt: " << motor->target_position()                 //
-                  << " rpm: " << width_out(5) << motor->rpm() << " pwm: " << motor->pwm_duty()
-                  << "/" << width_out(0) << cycle << (motor->driver_fault() ? " FAULT" : "")
+                  << " rpm: " << width_out(4) << motor->rpm()             //
+                  << " pwm: " << motor->pwm_duty()                        //
+                  << "/" << width_out(0) << cycle                         //
+                  << (motor->pos_clt_enabled() ? " POS" : "")
+                  << (motor->driver_fault() ? " FAULT" : "")
                   << (motor->overcurrent() ? " OVER" : "");
             uart0 << "\r\n";
         }

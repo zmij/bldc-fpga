@@ -14,15 +14,20 @@ module position_control #(
 ) (
     input logic sys_clk,
 
-    input logic enable,
+    input logic enable,  /**<! Enable position control*/
     input logic [counter_width-1:0] encoder_position,
     input logic [counter_width-1:0] target_position,
 
+    //@{
+    /** @name Pass-through when disabled */
     input logic [pwm_counter_width-1:0] pwm_duty_in,
     input rotation_direction_t dir_in,
+    input logic driver_enable_in,
+    //@}
 
     output logic [pwm_counter_width-1:0] pwm_duty_out,
     output rotation_direction_t dir_out,
+    output logic driver_enable_out,
 
     input logic reset_n
 );
@@ -171,6 +176,7 @@ module position_control #(
 
   assign pwm_duty_out = enable ? calculated_pwm_ : pwm_duty_in;
   assign dir_out = rotation_direction_t'(enable ? calculated_dir_ : dir_in);
+  assign driver_enable_out = enable ? 1 : driver_enable_in;
 
 endmodule
 

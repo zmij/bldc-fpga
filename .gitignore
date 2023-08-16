@@ -1,0 +1,10 @@
+build*
+temp*
+.*
+fpga/impl*
+*_tmp.v
+mcu/lib/CMSIS*
+mcu/lib/StdPeriph_Driver*
+# Testbench artifacts
+*.vcd
+*.vpp
